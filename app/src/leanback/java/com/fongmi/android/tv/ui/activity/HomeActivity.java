@@ -460,6 +460,12 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     }
 
     @Override
+    public void onReloadConfig() {
+        mBinding.progressLayout.showProgress();
+        VodConfig.load(getConfig(), getCallback());
+    }
+
+    @Override
     public void setSite(Site item) {
         VodConfig.get().setHome(item);
     }
