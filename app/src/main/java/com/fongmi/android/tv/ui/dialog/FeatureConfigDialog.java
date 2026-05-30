@@ -7,12 +7,19 @@ import android.view.LayoutInflater;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.FragmentActivity;
 
+import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.TmdbConfig;
 import com.fongmi.android.tv.databinding.DialogFeatureConfigBinding;
+import com.fongmi.android.tv.service.TmdbService;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.Task;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
@@ -79,6 +86,7 @@ public class FeatureConfigDialog {
         binding.extra3.setText(config.getImageHost());
         setSiteRules(config.getEnabledSites(), config.getExcludeKeywords());
         binding.siteManage.setOnClickListener(v -> showSiteManageDialog());
+        binding.test.setOnClickListener(v -> testTmdbConfig());
     }
 
     private void onPositive(DialogInterface dialog, int which) {
@@ -100,6 +108,81 @@ public class FeatureConfigDialog {
 
     private void onNegative(DialogInterface dialog, int which) {
         dialog.dismiss();
+    }
+
+    private TmdbConfig currentConfig() {
+        SiteRules rules = parseSiteRules();
+        String json = "{"
+                + "\"accessToken\":\"" + escape(binding.base.getText()) + "\","
+                + "\"apiKey\":\"" + escape(binding.base.getText()) + "\","
+                + "\"language\":\"" + escape(binding.extra1.getText()) + "\","
+                + "\"apiBase\":\"" + escape(toApiBase(binding.extra2.getText())) + "\","
+                + "\"imageBase\":\"" + escape(toImageBase(binding.extra3.getText(), "w342")) + "\","
+                + "\"backdropBase\":\"" + escape(toImageBase(binding.extra3.getText(), "w780")) + "\","
+                + "\"enabledSites\":" + arrayJson(rules.enabled()) + ","
+                + "\"excludeKeywordsConfigured\":true,"
+                + "\"excludeKeywords\":" + arrayJson(rules.excluded())
+                + "}";
+        return TmdbConfig.objectFrom(json);
+    }
+
+    private void testTmdbConfig() {
+        TmdbConfig config = currentConfig();
+        if (!config.isReady()) {
+            Notify.show(R.string.detail_tmdb_need_key);
+            return;
+        }
+        binding.test.setEnabled(false);
+        binding.test.setText(R.string.dialog_tmdb_testing);
+        Task.execute(() -> {
+            try {
+                JsonObject result = new TmdbService().configuration(config);
+                String message = buildTestMessage(config, result);
+                App.post(() -> showTestResult(true, message));
+            } catch (Throwable e) {
+                String error = TextUtils.isEmpty(e.getMessage()) ? activity.getString(R.string.dialog_tmdb_test_failed) : e.getMessage();
+                App.post(() -> showTestResult(false, error));
+            }
+        });
+    }
+
+    private void showTestResult(boolean success, String message) {
+        binding.test.setEnabled(true);
+        binding.test.setText(R.string.dialog_tmdb_test);
+        if (activity.isFinishing() || activity.isDestroyed()) return;
+        new MaterialAlertDialogBuilder(activity)
+                .setTitle(success ? R.string.dialog_tmdb_test_success : R.string.dialog_tmdb_test_failed)
+                .setMessage(message)
+                .setPositiveButton(R.string.dialog_positive, null)
+                .show();
+    }
+
+    private String buildTestMessage(TmdbConfig config, JsonObject result) {
+        String auth = TextUtils.isEmpty(config.getAccessToken()) ? activity.getString(R.string.dialog_tmdb_auth_key) : activity.getString(R.string.dialog_tmdb_auth_token);
+        return activity.getString(R.string.dialog_tmdb_test_result,
+                config.getApiBase(),
+                auth,
+                config.getLanguage(),
+                config.getImageHost(),
+                posterSizes(result));
+    }
+
+    private String posterSizes(JsonObject result) {
+        JsonArray sizes = array(result, "images", "poster_sizes");
+        List<String> items = new ArrayList<>();
+        for (JsonElement element : sizes) {
+            if (!element.isJsonPrimitive()) continue;
+            String size = element.getAsString();
+            if (!TextUtils.isEmpty(size)) items.add(size);
+            if (items.size() >= 6) break;
+        }
+        return items.isEmpty() ? "-" : TextUtils.join(", ", items);
+    }
+
+    private JsonArray array(JsonObject object, String parent, String child) {
+        if (object == null || !object.has(parent) || !object.get(parent).isJsonObject()) return new JsonArray();
+        JsonObject parentObject = object.getAsJsonObject(parent);
+        return parentObject.has(child) && parentObject.get(child).isJsonArray() ? parentObject.getAsJsonArray(child) : new JsonArray();
     }
 
     private String escape(CharSequence value) {

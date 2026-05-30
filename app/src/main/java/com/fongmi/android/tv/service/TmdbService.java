@@ -37,6 +37,16 @@ public class TmdbService {
     private static final long SEASON_CACHE_TTL = DAY * 3;
     private static final long CN_ON_AIR_SEASON_CACHE_TTL = DAY;
 
+    public JsonObject configuration(@NonNull TmdbConfig config) throws Exception {
+        ensureReady(config);
+        HttpUrl url = apiBuilder(config.getApiBase() + "/configuration", config).build();
+        try (Response response = execute(url.toString(), config)) {
+            if (response.body() == null) throw new IllegalStateException("TMDB configuration returned empty");
+            if (!response.isSuccessful()) throw new IllegalStateException("TMDB configuration failed: HTTP " + response.code());
+            return App.gson().fromJson(response.body().string(), JsonObject.class);
+        }
+    }
+
     public JsonObject searchRaw(@NonNull String keyword, @NonNull TmdbConfig config) throws Exception {
         ensureReady(config);
         try (Response response = execute(searchUrl(keyword, config), config)) {

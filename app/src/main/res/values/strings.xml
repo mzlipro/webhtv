@@ -355,5 +355,12 @@
     <string name="dialog_tmdb_site_exclude_prefix">Exclude:</string>
     <string name="dialog_tmdb_site_manage">Select enabled sources</string>
     <string name="dialog_tmdb_site_clear">Default all</string>
+    <string name="dialog_tmdb_test">Test connection</string>
+    <string name="dialog_tmdb_testing">Testing TMDB...</string>
+    <string name="dialog_tmdb_test_success">TMDB connection succeeded</string>
+    <string name="dialog_tmdb_test_failed">TMDB connection failed</string>
+    <string name="dialog_tmdb_test_result">API: %1$s\nAuth: %2$s\nLanguage: %3$s\nImage: %4$s\nSizes: %5$s</string>
+    <string name="dialog_tmdb_auth_token">Access Token</string>
+    <string name="dialog_tmdb_auth_key">API Key</string>
 
 </resources>

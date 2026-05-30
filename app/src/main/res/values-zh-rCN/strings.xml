@@ -350,4 +350,12 @@
     <string name="dialog_tmdb_site_manage">选择关联站源</string>
     <string name="dialog_tmdb_site_clear">默认全部</string>
 
+    <string name="dialog_tmdb_test">测试连接</string>
+    <string name="dialog_tmdb_testing">正在测试 TMDB...</string>
+    <string name="dialog_tmdb_test_success">TMDB 连接成功</string>
+    <string name="dialog_tmdb_test_failed">TMDB 连接失败</string>
+    <string name="dialog_tmdb_test_result">API：%1$s\n鉴权：%2$s\n语言：%3$s\n图片：%4$s\n尺寸：%5$s</string>
+    <string name="dialog_tmdb_auth_token">Access Token</string>
+    <string name="dialog_tmdb_auth_key">API Key</string>
+
 </resources>
