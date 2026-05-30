@@ -1077,8 +1077,12 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         boolean same = item.getUrl().equals(mHistory.getEpisodeUrl()) || item.matchesName(mHistory.getEpisode());
         mHistory.setPosition(same ? mHistory.getPosition() : C.TIME_UNSET);
         mHistory.setVodFlag(getFlag().getFlag());
-        mHistory.setVodRemarks(item.getDisplayName());
+        mHistory.setVodRemarks(getHistoryEpisodeName(item));
         mHistory.setEpisodeUrl(item.getUrl());
+    }
+
+    protected String getHistoryEpisodeName(Episode item) {
+        return item.getDisplayName();
     }
 
     private void checkKeepImg() {

@@ -169,8 +169,10 @@ public class TmdbService {
         Map<Integer, CrewEntry> entries = new LinkedHashMap<>();
         addAggregateCrew(entries, array(detail, "aggregate_credits", "crew"), config);
         addCreditCrew(entries, array(detail, "credits", "crew"), config);
+        List<CrewEntry> creators = new ArrayList<>(entries.values());
+        creators.sort(Comparator.comparingInt(this::creatorEntryOrder));
         List<TmdbPerson> items = new ArrayList<>();
-        for (CrewEntry entry : entries.values()) {
+        for (CrewEntry entry : creators) {
             if (entry.jobs.isEmpty()) continue;
             items.add(new TmdbPerson(entry.id, entry.name, TextUtils.join(" / ", entry.jobs), entry.profile, entry.department, ""));
             if (items.size() >= 12) break;
@@ -234,6 +236,10 @@ public class TmdbService {
         if ("编剧".equals(job)) return 1;
         if ("制片".equals(job)) return 2;
         return 3;
+    }
+
+    private int creatorEntryOrder(CrewEntry entry) {
+        return entry.jobs.isEmpty() ? 3 : creatorJobOrder(entry.jobs.get(0));
     }
 
     public List<TmdbEpisode> episodes(JsonObject season, @NonNull TmdbConfig config) {

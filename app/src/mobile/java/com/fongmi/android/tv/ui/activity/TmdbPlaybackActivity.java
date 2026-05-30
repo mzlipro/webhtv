@@ -95,6 +95,14 @@ public class TmdbPlaybackActivity extends VideoActivity implements TmdbPlaybackE
         // Keep the original playback page chrome; TMDB data is merged into the normal fields.
     }
 
+    @Override
+    protected String getHistoryEpisodeName(Episode item) {
+        if (item.getNumber() <= 0) return super.getHistoryEpisodeName(item);
+        String title = getEpisodeTitles().get(item.getNumber());
+        if (TextUtils.isEmpty(title)) return super.getHistoryEpisodeName(item);
+        return item.getNumber() + ". " + title;
+    }
+
     private Vod mergeIntentTmdbVod(Vod source) {
         if (!hasIntentTmdbVod()) return source;
         Vod vod = new Vod();
