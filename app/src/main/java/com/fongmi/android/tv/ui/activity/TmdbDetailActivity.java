@@ -693,9 +693,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             try {
                 TmdbLoadResult result = tmdbFuture.get();
                 if (result != null && result.bundle() == null && finalVod != null) {
-                    logTmdbMatch("基础匹配未命中，使用站源详情继续消歧：片名=%s，年份=%s，演员=%s，导演=%s，简介长度=%d",
-                            finalVod.getName(), finalVod.getYear(), finalVod.getActor(), finalVod.getDirector(), finalVod.getContent().length());
-                    TmdbBundle bundle = chooseTmdbBundle(result.searchItems(), getNameText(), finalVod);
+                    String query = cleanTmdbSearchQuery(finalVod.getName());
+                    logTmdbMatch("基础匹配未命中，使用站源详情继续消歧：片名=%s，清洗后=%s，年份=%s，演员=%s，导演=%s，简介长度=%d",
+                            finalVod.getName(), query, finalVod.getYear(), finalVod.getActor(), finalVod.getDirector(), finalVod.getContent().length());
+                    TmdbBundle bundle = chooseTmdbBundle(result.searchItems(), query, finalVod);
                     if (bundle != null) result = new TmdbLoadResult(bundle, result.searchItems());
                 }
                 TmdbLoadResult finalResult = result;
@@ -760,9 +761,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                     }
                 }
                 if (match == null) {
-                    searchItems = tmdbService.search(getNameText(), tmdbConfig);
-                    logTmdbMatch("搜索完成：关键词=%s，返回数量=%d", getNameText(), searchItems.size());
-                    match = chooseTmdbMatch(searchItems, getNameText(), null);
+                    String query = getTmdbSearchQuery();
+                    searchItems = searchTmdbItems(query, getNameText());
+                    logTmdbMatch("搜索完成：原始标题=%s，实际搜索词=%s，返回数量=%d", getNameText(), query, searchItems.size());
+                    match = chooseTmdbMatch(searchItems, query, null);
                 }
                 if (match != null && tmdbBundle == null) tmdbBundle = loadTmdbBundle(match);
             }
@@ -909,7 +911,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.loading.setVisibility(View.VISIBLE);
         Task.execute(() -> {
             try {
-                List<TmdbItem> items = tmdbService.search(getTmdbSearchQuery(), tmdbConfig);
+                List<TmdbItem> items = searchTmdbItems(getTmdbSearchQuery(), getNameText());
                 runOnAliveUi(() -> {
                     binding.loading.setVisibility(View.GONE);
                     showTmdbMatchDialog(items, false);
@@ -949,15 +951,16 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private String getTmdbSearchQuery() {
         if (matchedTmdbItem != null && !TextUtils.isEmpty(matchedTmdbItem.getTitle())) return matchedTmdbItem.getTitle();
-        if (vod != null && !TextUtils.isEmpty(vod.getName())) return vod.getName();
-        return getNameText();
+        if (vod != null && !TextUtils.isEmpty(vod.getName())) return cleanTmdbSearchQuery(vod.getName());
+        return cleanTmdbSearchQuery(getNameText());
     }
 
     private void searchTmdb(String keyword, TmdbSearchDialog dialog) {
         dialog.loading();
         Task.execute(() -> {
             try {
-                List<TmdbItem> items = tmdbService.search(keyword, tmdbConfig);
+                String query = cleanTmdbSearchQuery(keyword);
+                List<TmdbItem> items = searchTmdbItems(query, keyword);
                 runOnAliveUi(() -> dialog.updateItems(items));
             } catch (Throwable e) {
                 runOnAliveUi(() -> {
@@ -1076,6 +1079,16 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 binding.overview.setEllipsize(null);
             }
         });
+    }
+
+    private List<TmdbItem> searchTmdbItems(String query, String fallback) throws Exception {
+        List<TmdbItem> items = tmdbService.search(query, tmdbConfig);
+        logTmdbMatch("TMDB 搜索：搜索词=%s，结果数=%d", query, items.size());
+        String fallbackQuery = Objects.toString(fallback, "").trim();
+        if (!items.isEmpty() || TextUtils.isEmpty(fallbackQuery) || query.equals(fallbackQuery)) return items;
+        List<TmdbItem> fallbackItems = tmdbService.search(fallbackQuery, tmdbConfig);
+        logTmdbMatch("TMDB 搜索回退：清洗后无结果，原始词=%s，结果数=%d", fallbackQuery, fallbackItems.size());
+        return fallbackItems;
     }
 
     private void toggleOverview() {
@@ -2909,6 +2922,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         // 年份优先取站源详情字段；如果站源没有年份，再从标题或搜索词里提取。
         // 这样网盘/站源标题里带“2026”的情况，也能参与严格同年判断。
         int year = sourceVod == null ? 0 : firstYear(sourceVod.getYear());
+        if (year > 0) return year;
+        year = sourceVod == null ? 0 : firstYear(sourceVod.getName());
+        if (year > 0) return year;
+        year = firstYear(getNameText());
         return year > 0 ? year : firstYear(keyword);
     }
 
@@ -2960,6 +2977,48 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private String normalize(String text) {
         return Objects.toString(text, "").replaceAll("[\\s·•:：\\-_/\\\\|()（）\\[\\]【】]+", "").trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String cleanTmdbSearchQuery(String text) {
+        String raw = Objects.toString(text, "").trim();
+        if (TextUtils.isEmpty(raw)) return "";
+        String cleaned = raw;
+        // TMDB 搜索词清洗只负责去掉资源站常见附加信息，不改变后面的严格匹配规则。
+        // 例如“怪奇物语 第五季 [臻彩]”会搜“怪奇物语”，但候选标题仍必须等于“怪奇物语”。
+        cleaned = cleaned.replaceAll("(?i)\\.(mkv|mp4|avi|mov|wmv|flv|rmvb|ts|m2ts)$", "");
+        cleaned = removeNoiseBrackets(cleaned);
+        cleaned = cleaned.replaceAll("(?i)\\b(S\\d{1,2}|Season\\s*\\d{1,2})\\b", " ");
+        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇0-9]+\\s*[季部]", " ");
+        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇0-9]+\\s*[集话話]", " ");
+        cleaned = cleaned.replaceAll("(全|共|更新至|更至|连载至|連載至)\\s*[0-9一二三四五六七八九十百零〇]+\\s*[集话話]", " ");
+        cleaned = cleaned.replaceAll("(?i)\\b(4K|8K|1080P|2160P|720P|HDR|HDR10|DV|WEB[- ]?DL|BluRay|BDRip|Remux|HEVC|H\\.?265|H\\.?264|x265|x264|AAC|DTS|DDP?5?\\.?1|Atmos|NF|Netflix|AMZN|DSNP)\\b", " ");
+        cleaned = cleaned.replaceAll("(国语版|国配版|普通话版|粤语版|台语版|闽南语版|原声版|配音版|中字版|字幕版|台版|台灣版|台湾版|港版|港澳版|大陆版|內地版|内地版|中国版|中國版|泰版|泰国版|泰國版|韩版|韩国版|韓國版|日版|日本版|美版|美国版|美國版|英版|英国版|英國版)", " ");
+        cleaned = cleaned.replaceAll("(臻彩|高码|高码率|无水印|无台标|国语|国配|国粤|粤语|中字|字幕|内封|简繁|双语|官中|杜比|合集|全集|完结|未删减|加长版|修复版)", " ");
+        cleaned = cleaned.replaceAll("[._\\-+]+", " ");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("^[\\s:：,，.。·|/\\\\]+|[\\s:：,，.。·|/\\\\]+$", "");
+        if (TextUtils.isEmpty(cleaned)) cleaned = raw;
+        if (!raw.equals(cleaned)) logTmdbMatch("搜索词清洗：原始=%s，清洗后=%s", raw, cleaned);
+        return cleaned;
+    }
+
+    private String removeNoiseBrackets(String text) {
+        Matcher matcher = Pattern.compile("[\\[【「『(（]([^\\]】」』)）]{1,40})[\\]】」』)）]").matcher(text);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String value = matcher.group(1);
+            matcher.appendReplacement(buffer, isTmdbNoiseTag(value) ? " " : Matcher.quoteReplacement(matcher.group()));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private boolean isTmdbNoiseTag(String text) {
+        String value = normalize(text);
+        if (TextUtils.isEmpty(value)) return true;
+        return value.matches("(?i).*(4k|8k|1080p|2160p|720p|hdr|hdr10|dv|webdl|bluray|bdrip|remux|hevc|h265|h264|x265|x264|aac|dts|ddp|atmos|nf|netflix|amzn|dsnp).*")
+                || value.matches(".*(臻彩|高码|高码率|无水印|无台标|国语|国配|国粤|粤语|中字|字幕|内封|简繁|双语|官中|杜比|合集|全集|完结|未删减|加长版|修复版).*")
+                || value.matches(".*(国语版|国配版|普通话版|粤语版|台语版|闽南语版|原声版|配音版|中字版|字幕版|台版|台灣版|台湾版|港版|港澳版|大陆版|內地版|内地版|中国版|中國版|泰版|泰国版|泰國版|韩版|韩国版|韓國版|日版|日本版|美版|美国版|美國版|英版|英国版|英國版).*");
     }
 
     private Flag findInitialFlag(List<Flag> flags) {
