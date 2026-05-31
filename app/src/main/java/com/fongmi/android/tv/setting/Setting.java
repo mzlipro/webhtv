@@ -108,6 +108,14 @@ public class Setting {
         Prefers.put("incognito", incognito);
     }
 
+    public static boolean isHomeHistory() {
+        return Prefers.getBoolean("home_history", true);
+    }
+
+    public static void putHomeHistory(boolean homeHistory) {
+        Prefers.put("home_history", homeHistory);
+    }
+
     public static boolean isDriveCheck() {
         return Prefers.getBoolean("drive_check", true);
     }

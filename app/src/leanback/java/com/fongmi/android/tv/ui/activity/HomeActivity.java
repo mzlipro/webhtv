@@ -91,6 +91,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     private Result mResult;
     private Clock mClock;
     private boolean initialLoaded;
+    private boolean homeHistoryVisible;
 
     private Site getHome() {
         return VodConfig.get().getHome();
@@ -193,7 +194,8 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     private void setAdapter() {
         mHistoryAdapter = new ArrayObjectAdapter(mPresenter = new HistoryPresenter(this));
         mAdapter.add(new ListRow(mFuncAdapter = new ArrayObjectAdapter(new FuncPresenter(this))));
-        mAdapter.add(R.string.home_history);
+        homeHistoryVisible = Setting.isHomeHistory();
+        if (homeHistoryVisible) mAdapter.add(R.string.home_history);
         mAdapter.add(R.string.home_recommend);
     }
 
@@ -301,6 +303,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         items.add(Func.create(R.string.home_search));
         items.add(Func.create(R.string.home_keep));
         items.add(Func.create(R.string.home_push));
+        if (!Setting.isHomeHistory()) items.add(Func.create(R.string.home_history_button));
         items.add(Func.create(R.string.home_setting));
         mFuncAdapter.setItems(items, new BaseDiffCallback<Func>());
     }
@@ -310,14 +313,45 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     }
 
     private void getHistory(boolean renew) {
+        if (!Setting.isHomeHistory()) {
+            removeHistorySection();
+            return;
+        }
+        ensureHistoryHeader();
         List<History> items = History.get();
         int historyIndex = getHistoryIndex();
-        int recommendIndex = getRecommendIndex();
-        boolean exist = recommendIndex - historyIndex == 2;
+        boolean exist = hasHistoryRow();
         if (renew) mHistoryAdapter = new ArrayObjectAdapter(mPresenter = new HistoryPresenter(this));
         if ((items.isEmpty() && exist) || (renew && exist)) mAdapter.removeItems(historyIndex, 1);
         if ((!items.isEmpty() && !exist) || (renew && exist)) mAdapter.add(historyIndex, new ListRow(mHistoryAdapter));
         mHistoryAdapter.setItems(items, new BaseDiffCallback<History>());
+    }
+
+    private void syncHomeHistorySetting() {
+        if (homeHistoryVisible == Setting.isHomeHistory()) return;
+        homeHistoryVisible = Setting.isHomeHistory();
+        setFunc();
+        if (homeHistoryVisible) getHistory(true);
+        else removeHistorySection();
+    }
+
+    private void ensureHistoryHeader() {
+        if (mAdapter.indexOf(R.string.home_history) != -1) return;
+        mAdapter.add(mAdapter.indexOf(R.string.home_recommend), R.string.home_history);
+    }
+
+    private void removeHistorySection() {
+        int index = mAdapter.indexOf(R.string.home_history);
+        if (index == -1) return;
+        int count = hasHistoryRow() ? 2 : 1;
+        mAdapter.removeItems(index, count);
+        mPresenter.setDelete(false);
+    }
+
+    private boolean hasHistoryRow() {
+        int history = mAdapter.indexOf(R.string.home_history);
+        int recommend = mAdapter.indexOf(R.string.home_recommend);
+        return history != -1 && recommend - history == 2;
     }
 
     private void setHistoryDelete(boolean delete) {
@@ -425,6 +459,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         else if (item.getResId() == R.string.home_keep) KeepActivity.start(this);
         else if (item.getResId() == R.string.home_push) PushActivity.start(this);
         else if (item.getResId() == R.string.home_search) SearchActivity.start(this);
+        else if (item.getResId() == R.string.home_history_button) HistoryActivity.start(this);
         else if (item.getResId() == R.string.home_setting) SettingActivity.start(this);
     }
 
@@ -517,6 +552,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         super.onResume();
         mClock.start();
         if (mWeb != null) mWeb.onResume();
+        syncHomeHistorySetting();
     }
 
     @Override

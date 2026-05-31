@@ -140,6 +140,7 @@
     <string name="setting_proxy_invalid">代理地址无效</string>
     <string name="setting_one_key_sync">一键同步</string>
     <string name="setting_incognito">无痕模式</string>
+    <string name="setting_home_history">首页最近观看</string>
     <string name="setting_drive_check">网盘检测</string>
     <string name="setting_search_thread">搜索线程</string>
     <string name="setting_search_ui">搜索排版</string>

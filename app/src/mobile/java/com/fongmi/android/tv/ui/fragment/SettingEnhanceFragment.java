@@ -15,9 +15,12 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.TmdbConfig;
 import com.fongmi.android.tv.databinding.FragmentSettingEnhanceBinding;
 import com.fongmi.android.tv.server.Server;
+import com.fongmi.android.tv.setting.ProxySetting;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.dialog.FeatureConfigDialog;
+import com.fongmi.android.tv.ui.dialog.OneKeySyncDialog;
+import com.fongmi.android.tv.ui.dialog.ShellProxyDialog;
 import com.fongmi.android.tv.utils.Notify;
 import com.github.catvod.crawler.SpiderDebug;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -53,6 +56,9 @@ public class SettingEnhanceFragment extends BaseFragment {
         mBinding.tmdbConfig.setOnClickListener(this::setTmdbConfig);
         mBinding.driveCheck.setOnClickListener(this::setDriveCheck);
         mBinding.debugLog.setOnClickListener(this::setDebugLog);
+        mBinding.shellProxy.setOnClickListener(this::setShellProxy);
+        mBinding.shellProxyConfig.setOnClickListener(this::setShellProxyConfig);
+        mBinding.oneKeySync.setOnClickListener(this::setOneKeySync);
     }
 
     private void setText() {
@@ -61,6 +67,14 @@ public class SettingEnhanceFragment extends BaseFragment {
         mBinding.tmdbConfigText.setText(TmdbConfig.objectFrom(Setting.getTmdbConfig()).isReady() ? R.string.setting_configured : R.string.setting_unconfigured);
         mBinding.driveCheckText.setText(getSwitch(Setting.isDriveCheck()));
         mBinding.debugLogText.setText(getSwitch(Setting.isDebugLog()));
+        mBinding.shellProxyText.setText(getSwitch(Setting.isShellProxy()));
+        mBinding.shellProxyConfig.setVisibility(Setting.isShellProxy() ? View.VISIBLE : View.GONE);
+        mBinding.shellProxyConfigText.setText(getShellProxyConfigText());
+    }
+
+    private String getShellProxyConfigText() {
+        int count = ProxySetting.getRules().size();
+        return count > 0 ? getString(R.string.setting_proxy_rule_count, count) : Setting.getShellProxyUrl();
     }
 
     private String getDetailOpenMode() {
@@ -120,6 +134,19 @@ public class SettingEnhanceFragment extends BaseFragment {
         } catch (ActivityNotFoundException e) {
             Notify.show(url);
         }
+    }
+
+    private void setShellProxy(View view) {
+        Setting.putShellProxy(!Setting.isShellProxy());
+        setText();
+    }
+
+    private void setShellProxyConfig(View view) {
+        ShellProxyDialog.show(this, this::setText);
+    }
+
+    private void setOneKeySync(View view) {
+        OneKeySyncDialog.create().show(requireActivity());
     }
 
     @Override
