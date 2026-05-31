@@ -701,6 +701,9 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.next.setVisibility(items.size() < 2 ? View.GONE : View.VISIBLE);
         mBinding.control.prev.setVisibility(items.size() < 2 ? View.GONE : View.VISIBLE);
         mBinding.reverse.setVisibility(items.size() < 2 ? View.GONE : View.VISIBLE);
+        mBinding.reverse.setSelected(mHistory.isRevSort());
+        mBinding.reverse.setRotation(mHistory.isRevSort() ? 180f : 0f);
+        mBinding.reverse.setContentDescription(getString(mHistory.isRevSort() ? R.string.detail_episode_forward : R.string.detail_episode_reverse));
         mBinding.episode.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.more.setVisibility(items.size() < 10 ? View.GONE : View.VISIBLE);
         mEpisodeAdapter.addAll(items);
