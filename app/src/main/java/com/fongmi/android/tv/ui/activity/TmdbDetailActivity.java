@@ -39,6 +39,7 @@ import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
+import com.fongmi.android.tv.bean.Danmaku;
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.bean.Flag;
 import com.fongmi.android.tv.bean.History;
@@ -46,6 +47,7 @@ import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.bean.Parse;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
+import com.fongmi.android.tv.bean.Sub;
 import com.fongmi.android.tv.bean.TmdbConfig;
 import com.fongmi.android.tv.bean.TmdbEpisode;
 import com.fongmi.android.tv.bean.TmdbItem;
@@ -89,6 +91,9 @@ import com.bumptech.glide.request.transition.Transition;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -164,6 +169,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private int loadGeneration;
     private boolean episodeGridMode;
     private boolean episodeReverse;
+    private boolean scrollEpisodeStartOnce;
     private boolean tmdbMediaLoading;
     private boolean lightTheme;
 
@@ -1164,22 +1170,32 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private void scrollEpisodeToSelected() {
         if (selectedEpisode == null || episodeAdapter == null) return;
         binding.episodeContainer.post(() -> {
+            if (scrollEpisodeStartOnce) {
+                scrollEpisodeStartOnce = false;
+                scrollEpisodeToPosition(0, ResUtil.dp2px(8));
+                return;
+            }
             if (selectedEpisode == null) return;
             int position = episodeAdapter.getPosition(selectedEpisode);
             if (position < 0) return;
-            RecyclerView.LayoutManager layoutManager = binding.episodeContainer.getLayoutManager();
-            if (layoutManager instanceof GridLayoutManager gridLayoutManager) {
-                gridLayoutManager.scrollToPositionWithOffset(position, ResUtil.dp2px(8));
-            } else if (layoutManager instanceof LinearLayoutManager linearLayoutManager) {
-                linearLayoutManager.scrollToPositionWithOffset(position, ResUtil.dp2px(12));
-            } else {
-                binding.episodeContainer.scrollToPosition(position);
-            }
+            scrollEpisodeToPosition(position, ResUtil.dp2px(12));
         });
+    }
+
+    private void scrollEpisodeToPosition(int position, int offset) {
+        RecyclerView.LayoutManager layoutManager = binding.episodeContainer.getLayoutManager();
+        if (layoutManager instanceof GridLayoutManager gridLayoutManager) {
+            gridLayoutManager.scrollToPositionWithOffset(position, offset);
+        } else if (layoutManager instanceof LinearLayoutManager linearLayoutManager) {
+            linearLayoutManager.scrollToPositionWithOffset(position, offset);
+        } else {
+            binding.episodeContainer.scrollToPosition(position);
+        }
     }
 
     private void toggleEpisodeReverse() {
         episodeReverse = !episodeReverse;
+        scrollEpisodeStartOnce = episodeReverse;
         renderEpisodes();
     }
 
@@ -1789,6 +1805,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerTitle.setTextColor(0xFFFFFFFF);
         tintInlineControl(binding.playerControls);
         setPlayerCard(lightTheme ? ThemeColors.light() : ThemeColors.dark());
+        ensureInlineDanmakuController();
         binding.playerPanel.setVisibility(View.VISIBLE);
         enterInlineFullscreen();
         playInline();
@@ -1831,6 +1848,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         player().stop();
         player().clear();
         Site site = getCurrentSite();
+        ensureInlineDanmakuController();
         startPlayer(getHistoryKey(), result, useParse, site == null ? 0 : site.getTimeout(), buildMetadata());
         binding.playerPanel.requestFocus();
     }
@@ -2314,11 +2332,14 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     @Override
     protected void onServiceConnected() {
-        if (inlineControlController != null) {
-            player().setDanmakuController(binding.exo.getDanmakuController());
-            inlineControlController.applyDanmakuSetting();
-        }
+        ensureInlineDanmakuController();
         if (pendingInlineResult != null) startInlinePlayer(pendingInlineResult);
+    }
+
+    private void ensureInlineDanmakuController() {
+        if (service() == null || inlineControlController == null) return;
+        player().setDanmakuController(binding.exo.getDanmakuController());
+        inlineControlController.applyDanmakuSetting();
     }
 
     @Override
@@ -2361,6 +2382,13 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode == RESULT_OK && requestCode == 1001) PlayerHelper.onExternalResult(data, () -> playAdjacentEpisode(1), controller()::seekTo);
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onRefreshEvent(RefreshEvent event) {
+        if (!inlineStarted || service() == null || player() == null || player().isEmpty() || !isOwner()) return;
+        if (event.getType() == RefreshEvent.Type.DANMAKU) player().setDanmaku(Danmaku.from(event.getPath()));
+        else if (event.getType() == RefreshEvent.Type.SUBTITLE) player().setSub(Sub.from(event.getPath()));
     }
 
     @Override

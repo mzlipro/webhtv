@@ -10,9 +10,11 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -270,7 +272,41 @@ public class TmdbPersonActivity extends BaseActivity {
             item.button().setVisibility(item.count() > 0 ? View.VISIBLE : View.GONE);
             if (item.count() > 0) binding.filterGroup.addView(item.button());
         }
+        layoutFilterButtons();
         if (filterCount(filter) <= 0) filter = "all";
+    }
+
+    private void layoutFilterButtons() {
+        int count = binding.filterGroup.getChildCount();
+        boolean compact = isPhoneWidth();
+        binding.filterScroll.setFillViewport(compact);
+        ViewGroup.LayoutParams groupParams = binding.filterGroup.getLayoutParams();
+        groupParams.width = compact ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT;
+        binding.filterGroup.setLayoutParams(groupParams);
+        for (int i = 0; i < count; i++) {
+            View child = binding.filterGroup.getChildAt(i);
+            if (child instanceof MaterialButton button) {
+                button.setMinWidth(0);
+                button.setMinimumWidth(0);
+                button.setInsetLeft(0);
+                button.setInsetRight(0);
+                button.setSingleLine(true);
+                button.setPadding(dp(12), 0, dp(12), 0);
+            }
+            LinearLayout.LayoutParams params = compact
+                    ? new LinearLayout.LayoutParams(0, dp(36), 1f)
+                    : new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
+            params.setMarginEnd(i == count - 1 ? 0 : dp(8));
+            child.setLayoutParams(params);
+        }
+    }
+
+    private boolean isPhoneWidth() {
+        return getResources().getConfiguration().smallestScreenWidthDp < 600;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private int filterCount(String value) {

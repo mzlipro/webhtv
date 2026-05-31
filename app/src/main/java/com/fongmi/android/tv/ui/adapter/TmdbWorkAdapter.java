@@ -49,6 +49,10 @@ public class TmdbWorkAdapter extends RecyclerView.Adapter<TmdbWorkAdapter.ViewHo
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         TmdbItem item = items.get(position);
+        boolean phone = isPhoneWidth(holder.itemView);
+        holder.binding.getRoot().setMinimumHeight(phone ? dp(holder.itemView, 132) : 0);
+        holder.binding.title.setMaxLines(phone ? 2 : 1);
+        holder.binding.overview.setMaxLines(phone ? 2 : 3);
         holder.binding.title.setText(item.getTitle());
         holder.binding.meta.setText(formatMeta(item.getSubtitle()));
         holder.binding.meta.setVisibility(TextUtils.isEmpty(item.getSubtitle()) ? View.GONE : View.VISIBLE);
@@ -68,6 +72,14 @@ public class TmdbWorkAdapter extends RecyclerView.Adapter<TmdbWorkAdapter.ViewHo
     private String formatMeta(String meta) {
         if (TextUtils.isEmpty(meta)) return "";
         return meta.replace(" \u00b7 \u8bc4\u5206", "\n\u8bc4\u5206");
+    }
+
+    private boolean isPhoneWidth(View view) {
+        return view.getResources().getConfiguration().smallestScreenWidthDp < 600;
+    }
+
+    private int dp(View view, int value) {
+        return Math.round(value * view.getResources().getDisplayMetrics().density);
     }
 
     @Override

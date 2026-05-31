@@ -163,8 +163,8 @@ public class TmdbEpisodeAdapter extends RecyclerView.Adapter<TmdbEpisodeAdapter.
             params.width = ViewGroup.LayoutParams.MATCH_PARENT;
             params.height = dp(holder.itemView, 86);
         } else {
-            params.width = dp(holder.itemView, compact ? 220 : 230);
-            params.height = dp(holder.itemView, compact ? 78 : 190);
+            params.width = compact ? dp(holder.itemView, 220) : listCardWidth(holder.itemView);
+            params.height = dp(holder.itemView, compact ? 78 : (isPhoneWidth(holder.itemView) ? 172 : 190));
         }
         holder.binding.getRoot().setLayoutParams(params);
         if (params instanceof ViewGroup.MarginLayoutParams marginParams) {
@@ -172,6 +172,16 @@ public class TmdbEpisodeAdapter extends RecyclerView.Adapter<TmdbEpisodeAdapter.
             marginParams.bottomMargin = dp(holder.itemView, mode == Mode.GRID ? 10 : 0);
             holder.binding.getRoot().setLayoutParams(marginParams);
         }
+    }
+
+    private int listCardWidth(View view) {
+        if (!isPhoneWidth(view)) return dp(view, 230);
+        int screen = view.getResources().getDisplayMetrics().widthPixels;
+        return Math.max(dp(view, 168), Math.min(dp(view, 230), (screen - dp(view, 56)) / 2));
+    }
+
+    private boolean isPhoneWidth(View view) {
+        return view.getResources().getConfiguration().smallestScreenWidthDp < 600;
     }
 
     private void applyBadgeStyle(TextView view, boolean hasStill) {
