@@ -147,7 +147,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
                 LiveConfig.load(config, getCallback());
                 break;
             case 2:
-                Setting.putWall(0);
                 WallConfig.load(config, getCallback());
                 break;
         }
@@ -250,7 +249,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
     }
 
     private void setWallRefresh(View view) {
-        Setting.putWall(0);
         WallConfig.get().load(getCallback());
     }
 

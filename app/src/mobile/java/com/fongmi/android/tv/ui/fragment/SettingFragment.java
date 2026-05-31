@@ -161,7 +161,6 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
                 LiveConfig.load(config, getCallback());
                 break;
             case 2:
-                Setting.putWall(0);
                 WallConfig.load(config, getCallback());
                 break;
         }
@@ -275,7 +274,6 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
     }
 
     private void setWallRefresh(View view) {
-        Setting.putWall(0);
         WallConfig.get().load(getCallback());
     }
 
