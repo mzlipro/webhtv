@@ -9,7 +9,22 @@ if (localPropsFile.exists()) {
         localProps.load(it)
     }
 }
-def hasReleaseSigning = localProps['storeFile'] && localProps['keyAlias'] && localProps['storePassword']
+def propOrEnv = { prop, env ->
+    def value = localProps[prop]
+    return value != null && value.toString().trim() ? value : System.getenv(env)
+}
+def releaseStoreFile = propOrEnv('storeFile', 'RELEASE_STORE_FILE')
+def releaseKeyAlias = propOrEnv('keyAlias', 'RELEASE_KEY_ALIAS')
+def releaseStorePassword = propOrEnv('storePassword', 'RELEASE_STORE_PASSWORD')
+def releaseKeyPassword = propOrEnv('keyPassword', 'RELEASE_KEY_PASSWORD') ?: releaseStorePassword
+def hasReleaseSigning = releaseStoreFile && releaseKeyAlias && releaseStorePassword && releaseKeyPassword
+def baseVersionCode = 552
+def baseVersionName = "5.5.2"
+def ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")
+def ciVersionCode = ciRunNumber ? baseVersionCode * 100000 + ciRunNumber.toInteger() : baseVersionCode
+def ciVersionName = ciRunNumber ? "${baseVersionName}.${ciRunNumber}" : baseVersionName
+def resolvedVersionCode = (System.getenv("VERSION_CODE") ?: ciVersionCode).toString().toInteger()
+def resolvedVersionName = System.getenv("VERSION_NAME") ?: ciVersionName
 
 android {
     namespace = 'com.fongmi.android.tv'
@@ -20,8 +35,8 @@ android {
         applicationId "com.fongmi.android.tv"
         minSdk libs.versions.minSdk.get().toInteger()
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 552
-        versionName "5.5.2"
+        versionCode resolvedVersionCode
+        versionName resolvedVersionName
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments = ["room.schemaLocation": "$projectDir/schemas".toString(), "eventBusIndex": "com.fongmi.android.tv.event.EventIndex"]
@@ -56,10 +71,10 @@ android {
     signingConfigs {
         release {
             if (hasReleaseSigning) {
-                storeFile file(localProps['storeFile'])
-                keyAlias localProps['keyAlias']
-                keyPassword localProps['storePassword']
-                storePassword localProps['storePassword']
+                storeFile file(releaseStoreFile)
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                storePassword releaseStorePassword
             }
         }
     }
@@ -68,7 +83,7 @@ android {
         release {
             minifyEnabled = true
             shrinkResources = true
-            signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            signingConfig = signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro', 'proguard-rules-media.pro'
         }
     }
@@ -97,6 +112,15 @@ android {
         coreLibraryDesugaringEnabled = true
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseAssemble = graph.allTasks.any { task ->
+        task.path ==~ /:app:assemble.+Release/
+    }
+    if (releaseAssemble && !hasReleaseSigning) {
+        throw new GradleException("Release signing is missing. Configure local.properties or GitHub Secrets: RELEASE_KEYSTORE_BASE64, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, optional RELEASE_KEY_PASSWORD.")
     }
 }
 
