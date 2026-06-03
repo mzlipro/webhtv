@@ -75,6 +75,7 @@
                     <button class="md-btn md-btn-tonal" onclick="uploadFile()">上传文件</button>
                     <button class="md-btn md-btn-tonal" onclick="showNewFolderDialog()">新建文件夹</button>
                 </div>
+                <div class="file-path" id="filePath">/</div>
                 <div id="file_list"></div>
             </div>
 
@@ -156,6 +157,7 @@
             <div class="md-dialog-body" id="fileUrl"></div>
             <div class="md-dialog-actions">
                 <button onclick="pushFile(0)" class="md-dialog-btn">关闭</button>
+                <button onclick="downloadFile()" class="md-dialog-btn">下载</button>
                 <button onclick="pushFile(1)" class="md-dialog-btn">使用</button>
             </div>
         </div>

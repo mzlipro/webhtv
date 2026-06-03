@@ -19,6 +19,7 @@ import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.CustomCspDialog;
 import com.fongmi.android.tv.ui.dialog.DebugLogDialog;
 import com.fongmi.android.tv.ui.dialog.FeatureConfigDialog;
+import com.fongmi.android.tv.ui.dialog.ManagePageDialog;
 import com.fongmi.android.tv.ui.dialog.OneKeySyncDialog;
 import com.fongmi.android.tv.ui.dialog.ShellProxyDialog;
 import com.fongmi.android.tv.utils.Notify;
@@ -58,6 +59,7 @@ public class SettingEnhanceActivity extends BaseActivity {
         mBinding.shortDramaConfig.setOnClickListener(this::setShortDramaConfig);
         mBinding.driveCheck.setOnClickListener(this::setDriveCheck);
         mBinding.debugLog.setOnClickListener(this::setDebugLog);
+        mBinding.managePage.setOnClickListener(view -> ManagePageDialog.show(this));
         mBinding.shellProxy.setOnClickListener(this::setShellProxy);
         mBinding.shellProxyConfig.setOnClickListener(this::setShellProxyConfig);
         mBinding.customCsp.setOnClickListener(view -> CustomCspDialog.show(this, this::setText));
@@ -72,6 +74,7 @@ public class SettingEnhanceActivity extends BaseActivity {
         mBinding.shortDramaConfigText.setText(ShortDramaConfig.objectFrom(Setting.getShortDramaConfig()).getDisplayRules());
         mBinding.driveCheckText.setText(getSwitch(Setting.isDriveCheck()));
         mBinding.debugLogText.setText(getSwitch(Setting.isDebugLog()));
+        mBinding.managePageText.setText(R.string.manage_page_web);
         mBinding.shellProxyText.setText(getSwitch(Setting.isShellProxy()));
         mBinding.shellProxyConfig.setVisibility(Setting.isShellProxy() ? View.VISIBLE : View.GONE);
         mBinding.shellProxyConfigText.setText(getShellProxyConfigText());
