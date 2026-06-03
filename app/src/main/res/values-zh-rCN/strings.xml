@@ -113,6 +113,15 @@
     <string name="parse_god">超级解析</string>
     <string name="parse_from">解析来自：<xliff:g name="name">%s</xliff:g></string>
 
+    <!-- Control -->
+    <string name="control_display">屏显</string>
+    <string name="display_time">时间</string>
+    <string name="display_traffic">网速</string>
+    <string name="display_size">分辨率</string>
+    <string name="display_progress">进度</string>
+    <string name="display_mini">迷你</string>
+    <string name="display_title">标题</string>
+
     <!-- Push -->
     <string name="push">推送</string>
 

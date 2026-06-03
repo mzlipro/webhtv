@@ -155,11 +155,109 @@
                     android:textSize="13sp"
                     android:visibility="gone" />
 
+                <LinearLayout
+                    android:id="@+id/playerDisplayTopLeft"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|start"
+                    android:layout_marginStart="24dp"
+                    android:layout_marginTop="24dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/playerDisplayTitle"
+                        android:layout_width="320dp"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:textColor="@android:color/white"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:id="@+id/playerDisplaySize"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:fontFeatureSettings="tnum"
+                        android:textColor="@android:color/white"
+                        android:textSize="16sp" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/playerDisplayClock"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="24dp"
+                    android:layout_marginEnd="24dp"
+                    android:fontFeatureSettings="tnum"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/playerDisplayBottomProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_marginStart="24dp"
+                    android:layout_marginEnd="120dp"
+                    android:layout_marginBottom="24dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/playerDisplayPosition"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFeatureSettings="tnum"
+                        android:textColor="@android:color/white"
+                        android:textSize="16sp" />
+
+                    <ProgressBar
+                        android:id="@+id/playerDisplayBar"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="4dp"
+                        android:layout_marginTop="8dp"
+                        android:max="10000"
+                        android:progress="0"
+                        android:progressBackgroundTint="@color/white_40"
+                        android:progressTint="#2196F3" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/playerDisplayTraffic"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:layout_marginEnd="24dp"
+                    android:layout_marginBottom="24dp"
+                    android:fontFeatureSettings="tnum"
+                    android:textColor="@android:color/white"
+                    android:textSize="16sp"
+                    android:visibility="gone" />
+
+                <ProgressBar
+                    android:id="@+id/playerDisplayMini"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="3dp"
+                    android:layout_gravity="bottom"
+                    android:max="10000"
+                    android:progress="0"
+                    android:progressBackgroundTint="@android:color/transparent"
+                    android:progressTint="#2196F3"
+                    android:visibility="gone" />
+
                 <RelativeLayout
                     android:id="@+id/playerControls"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:background="@color/black_20"
+                    android:background="@android:color/transparent"
                     android:visibility="gone">
 
                     <LinearLayout
@@ -219,33 +317,6 @@
 
                     </LinearLayout>
 
-                    <LinearLayout
-                        android:id="@+id/playerCenter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_centerInParent="true"
-                        android:gravity="center"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:id="@+id/playerPrev"
-                            style="@style/Control"
-                            android:text="@string/play_prev" />
-
-                        <TextView
-                            android:id="@+id/playerToggle"
-                            style="@style/Control"
-                            android:layout_marginStart="18dp"
-                            android:layout_marginEnd="18dp"
-                            android:text="@string/play" />
-
-                        <TextView
-                            android:id="@+id/playerNext"
-                            style="@style/Control"
-                            android:text="@string/play_next" />
-
-                    </LinearLayout>
-
                     <androidx.appcompat.widget.AppCompatImageView
                         android:id="@+id/playerDanmakuToggle"
                         android:layout_width="48dp"
@@ -263,12 +334,127 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_alignParentBottom="true"
+                        android:background="@drawable/shape_controller"
                         android:orientation="vertical"
-                        android:paddingBottom="8dp">
+                        android:paddingStart="24dp"
+                        android:paddingTop="24dp"
+                        android:paddingEnd="24dp"
+                        android:paddingBottom="16dp">
+
+                        <HorizontalScrollView
+                            android:id="@+id/playerActionRow"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fillViewport="true"
+                            android:scrollbars="none">
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:id="@+id/playerNext"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_next" />
+
+                                <TextView
+                                    android:id="@+id/playerPrev"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_prev" />
+
+                                <TextView
+                                    android:id="@+id/playerEpisodes"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/detail_episode" />
+
+                                <TextView
+                                    android:id="@+id/playerRefresh"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_reset" />
+
+                                <TextView
+                                    android:id="@+id/playerExternal"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_exo" />
+
+                                <TextView
+                                    android:id="@+id/playerDecode"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_decode" />
+
+                                <TextView
+                                    android:id="@+id/playerDanmaku"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/danmaku" />
+
+                                <TextView
+                                    android:id="@+id/playerSpeed"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_speed" />
+
+                                <TextView
+                                    android:id="@+id/playerScale"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/play_scale" />
+
+                                <TextView
+                                    android:id="@+id/playerTextTrack"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:tag="3"
+                                    android:text="@string/play_track_text" />
+
+                                <TextView
+                                    android:id="@+id/playerAudioTrack"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:tag="1"
+                                    android:text="@string/play_track_audio" />
+
+                                <TextView
+                                    android:id="@+id/playerVideoTrack"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:tag="2"
+                                    android:text="@string/play_track_video" />
+
+                                <TextView
+                                    android:id="@+id/playerDisplay"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/control_display" />
+
+                                <TextView
+                                    android:id="@+id/playerQuality"
+                                    style="@style/Control"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/detail_quality"
+                                    android:visibility="gone" />
+
+                                <TextView
+                                    android:id="@+id/playerParse"
+                                    style="@style/Control"
+                                    android:text="@string/parse"
+                                    android:visibility="gone" />
+
+                            </LinearLayout>
+                        </HorizontalScrollView>
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
@@ -277,7 +463,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:paddingStart="16dp"
+                                android:paddingStart="0dp"
                                 android:paddingEnd="8dp" />
 
                             <androidx.appcompat.widget.AppCompatImageView
@@ -290,95 +476,6 @@
                                 android:src="@drawable/ic_control_fullscreen" />
 
                         </LinearLayout>
-
-                        <HorizontalScrollView
-                            android:id="@+id/playerActionRow"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fillViewport="true"
-                            android:paddingStart="8dp"
-                            android:paddingEnd="8dp"
-                            android:scrollbars="none"
-                            android:visibility="gone">
-
-                            <LinearLayout
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <TextView
-                                    android:id="@+id/playerExternal"
-                                    style="@style/Control"
-                                    android:text="@string/play_exo" />
-
-                                <TextView
-                                    android:id="@+id/playerDecode"
-                                    style="@style/Control"
-                                    android:text="@string/play_decode" />
-
-                                <TextView
-                                    android:id="@+id/playerSpeed"
-                                    style="@style/Control"
-                                    android:text="@string/play_speed" />
-
-                                <TextView
-                                    android:id="@+id/playerScale"
-                                    style="@style/Control"
-                                    android:text="@string/play_scale" />
-
-                                <TextView
-                                    android:id="@+id/playerRefresh"
-                                    style="@style/Control"
-                                    android:text="@string/play_reset" />
-
-                                <TextView
-                                    android:id="@+id/playerQuality"
-                                    style="@style/Control"
-                                    android:text="@string/detail_quality"
-                                    android:visibility="gone" />
-
-                                <TextView
-                                    android:id="@+id/playerParse"
-                                    style="@style/Control"
-                                    android:text="@string/parse"
-                                    android:visibility="gone" />
-
-                                <View
-                                    android:layout_width="0dp"
-                                    android:layout_height="0dp"
-                                    android:layout_weight="1" />
-
-                                <TextView
-                                    android:id="@+id/playerTextTrack"
-                                    style="@style/Control"
-                                    android:tag="3"
-                                    android:text="@string/play_track_text" />
-
-                                <TextView
-                                    android:id="@+id/playerAudioTrack"
-                                    style="@style/Control"
-                                    android:tag="1"
-                                    android:text="@string/play_track_audio" />
-
-                                <TextView
-                                    android:id="@+id/playerVideoTrack"
-                                    style="@style/Control"
-                                    android:tag="2"
-                                    android:text="@string/play_track_video" />
-
-                                <TextView
-                                    android:id="@+id/playerDanmaku"
-                                    style="@style/Control"
-                                    android:text="@string/danmaku" />
-
-                                <TextView
-                                    android:id="@+id/playerEpisodes"
-                                    style="@style/Control"
-                                    android:text="@string/detail_episode" />
-
-                            </LinearLayout>
-                        </HorizontalScrollView>
                     </LinearLayout>
 
                 </RelativeLayout>

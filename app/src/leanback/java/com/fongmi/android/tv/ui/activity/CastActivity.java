@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.View;
 
@@ -31,6 +32,7 @@ import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.ui.custom.CustomKeyDownVod;
 import com.fongmi.android.tv.ui.custom.CustomSeekView;
+import com.fongmi.android.tv.ui.dialog.DisplayDialog;
 import com.fongmi.android.tv.ui.dialog.SubtitleDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.utils.Clock;
@@ -42,7 +44,13 @@ import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 import org.jupnp.support.contentdirectory.DIDLParser;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+
 public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.Listener, TrackDialog.Listener {
+
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault());
 
     private ActivityCastBinding mBinding;
     private DLNARendererService mRenderer;
@@ -51,6 +59,7 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
     private CastAction mAction;
     private Runnable mR1;
     private Runnable mR2;
+    private Runnable mR3;
     private Clock mClock;
     private long position;
     private int scale;
@@ -111,6 +120,7 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
         mKeyDown.setFull(true);
         mR1 = this::hideControl;
         mR2 = this::setTraffic;
+        mR3 = this::updateDisplayTick;
         setVideoView();
     }
 
@@ -129,6 +139,7 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
         mBinding.control.action.player.setOnClickListener(view -> onChoose());
         mBinding.control.action.decode.setOnClickListener(view -> onDecode());
+        mBinding.control.action.display.setOnClickListener(view -> onDisplay());
         mBinding.control.action.speed.setOnLongClickListener(view -> onSpeedLong());
         mBinding.video.setOnTouchListener((view, event) -> mKeyDown.onTouchEvent(event));
     }
@@ -223,6 +234,10 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
         hideControl();
     }
 
+    private void onDisplay() {
+        DisplayDialog.show(this, this::updateDisplaySettings);
+    }
+
     private void onToggle() {
         if (isVisible(mBinding.control.getRoot())) hideControl();
         else showControl();
@@ -230,6 +245,8 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
 
     private void showProgress() {
         mBinding.progress.getRoot().setVisibility(View.VISIBLE);
+        updateProgressPanel();
+        updateDisplayPanel();
         App.post(mR2, 0);
         hideCenter();
         hideError();
@@ -239,6 +256,7 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
         mBinding.progress.getRoot().setVisibility(View.GONE);
         App.removeCallbacks(mR2);
         Traffic.reset();
+        updateDisplayPanel();
     }
 
     private void showError(String text) {
@@ -257,22 +275,26 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
         mBinding.widget.center.setVisibility(View.VISIBLE);
         mBinding.widget.duration.setText(player().getDurationTime());
         mBinding.widget.position.setText(player().getPositionTime(0));
+        updateDisplayPanel();
     }
 
     private void hideInfo() {
         mBinding.widget.top.setVisibility(View.GONE);
         mBinding.widget.center.setVisibility(View.GONE);
+        updateDisplayPanel();
     }
 
     private void showControl() {
         mBinding.control.getRoot().setVisibility(View.VISIBLE);
         mBinding.control.action.reset.requestFocus();
         setR1Callback();
+        updateDisplayPanel();
     }
 
     private void hideControl() {
         mBinding.control.getRoot().setVisibility(View.GONE);
         App.removeCallbacks(mR1);
+        updateDisplayPanel();
     }
 
     private void hideCenter() {
@@ -281,8 +303,66 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
     }
 
     private void setTraffic() {
-        Traffic.setSpeed(mBinding.progress.traffic);
+        updateProgressPanel();
+        if (PlayerSetting.isDisplayTraffic()) Traffic.setSpeed(mBinding.progress.traffic);
         App.post(mR2, 1000);
+    }
+
+    private void updateDisplayTick() {
+        updateDisplayPanel();
+        App.post(mR3, 1000);
+    }
+
+    private void updateDisplaySettings() {
+        updateProgressPanel();
+        updateDisplayPanel();
+    }
+
+    private void updateProgressPanel() {
+        boolean hasPlayer = service() != null && player() != null && !player().isEmpty();
+        boolean showTitle = PlayerSetting.isDisplayTitle() && !TextUtils.isEmpty(mBinding.widget.title.getText());
+        boolean showSize = hasPlayer && PlayerSetting.isDisplaySize() && !TextUtils.isEmpty(player().getSizeText());
+        mBinding.progress.title.setText(mBinding.widget.title.getText());
+        mBinding.progress.size.setText(showSize ? player().getSizeText() : "");
+        mBinding.progress.title.setVisibility(showTitle ? View.VISIBLE : View.GONE);
+        mBinding.progress.size.setVisibility(showSize ? View.VISIBLE : View.GONE);
+        mBinding.progress.topLeft.setVisibility(showTitle || showSize ? View.VISIBLE : View.GONE);
+        mBinding.progress.clock.setText(TIME_FORMAT.format(LocalDateTime.now()));
+        mBinding.progress.clock.setVisibility(PlayerSetting.isDisplayTime() ? View.VISIBLE : View.GONE);
+        mBinding.progress.bottomProgress.setVisibility(hasPlayer && PlayerSetting.isDisplayProgress() ? View.VISIBLE : View.GONE);
+        mBinding.progress.traffic.setVisibility(PlayerSetting.isDisplayTraffic() ? View.VISIBLE : View.GONE);
+        if (!hasPlayer) return;
+        long position = Math.max(0, player().getPosition());
+        long duration = Math.max(0, player().getDuration());
+        mBinding.progress.position.setText(player().getPositionTime(0) + "/" + player().getDurationTime());
+        mBinding.progress.bar.setProgress(duration > 0 ? (int) (position * mBinding.progress.bar.getMax() / duration) : 0);
+    }
+
+    private void updateDisplayPanel() {
+        boolean hasPlayer = service() != null && player() != null && !player().isEmpty();
+        boolean canShow = hasPlayer && isGone(mBinding.control.getRoot()) && isGone(mBinding.progress.getRoot()) && isGone(mBinding.widget.center) && isGone(mBinding.widget.error);
+        boolean showTitle = canShow && PlayerSetting.isDisplayTitle() && !TextUtils.isEmpty(mBinding.widget.title.getText());
+        boolean showSize = canShow && PlayerSetting.isDisplaySize() && !TextUtils.isEmpty(player().getSizeText());
+        boolean showProgress = canShow && PlayerSetting.isDisplayProgress() && player().getDuration() > 0;
+        boolean showMini = canShow && PlayerSetting.isDisplayMini() && player().getDuration() > 0;
+        mBinding.widget.displayTitle.setText(mBinding.widget.title.getText());
+        mBinding.widget.displaySize.setText(showSize ? player().getSizeText() : "");
+        mBinding.widget.displayTitle.setVisibility(showTitle ? View.VISIBLE : View.GONE);
+        mBinding.widget.displaySize.setVisibility(showSize ? View.VISIBLE : View.GONE);
+        mBinding.widget.displayTopLeft.setVisibility(showTitle || showSize ? View.VISIBLE : View.GONE);
+        mBinding.widget.displayClock.setText(TIME_FORMAT.format(LocalDateTime.now()));
+        mBinding.widget.displayClock.setVisibility(canShow && PlayerSetting.isDisplayTime() ? View.VISIBLE : View.GONE);
+        if (canShow && PlayerSetting.isDisplayTraffic()) Traffic.setSpeed(mBinding.widget.displayTraffic);
+        else mBinding.widget.displayTraffic.setVisibility(View.GONE);
+        mBinding.widget.displayBottomProgress.setVisibility(showProgress ? View.VISIBLE : View.GONE);
+        mBinding.widget.displayMini.setVisibility(showMini ? View.VISIBLE : View.GONE);
+        if (!showProgress && !showMini) return;
+        long duration = Math.max(0, player().getDuration());
+        long position = Math.max(0, Math.min(player().getPosition(), duration));
+        int progress = duration > 0 ? (int) (position * mBinding.widget.displayBar.getMax() / duration) : 0;
+        mBinding.widget.displayPosition.setText(player().getPositionTime(0) + "/" + player().getDurationTime());
+        mBinding.widget.displayBar.setProgress(progress);
+        mBinding.widget.displayMini.setProgress(progress);
     }
 
     private void setR1Callback() {
@@ -372,6 +452,7 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
             case Player.STATE_READY:
                 hideProgress();
                 player().reset();
+                updateDisplayPanel();
                 break;
             case Player.STATE_ENDED:
                 checkEnded();
@@ -398,6 +479,8 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
     @Override
     protected void onSizeChanged(VideoSize size) {
         mBinding.widget.size.setText(player().getSizeText());
+        updateProgressPanel();
+        updateDisplayPanel();
     }
 
     @Override
@@ -486,11 +569,13 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
     protected void onStart() {
         super.onStart();
         mClock.stop().start();
+        App.post(mR3, 0);
     }
 
     @Override
     protected void onStop() {
         super.onStop();
+        App.removeCallbacks(mR3);
         if (PlayerSetting.isBackgroundOff()) mClock.stop();
     }
 
@@ -515,7 +600,7 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
     protected void onDestroy() {
         mClock.release();
         releaseRenderer();
-        App.removeCallbacks(mR1, mR2);
+        App.removeCallbacks(mR1, mR2, mR3);
         super.onDestroy();
     }
 }

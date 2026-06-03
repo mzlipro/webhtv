@@ -61,9 +61,15 @@
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/video"
             style="@style/Control"
-            android:nextFocusRight="@id/reset"
+            android:layout_marginEnd="12dp"
             android:tag="2"
             android:text="@string/play_track_video" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/display"
+            style="@style/Control"
+            android:nextFocusRight="@id/reset"
+            android:text="@string/control_display" />
 
     </androidx.appcompat.widget.LinearLayoutCompat>
 </HorizontalScrollView>
