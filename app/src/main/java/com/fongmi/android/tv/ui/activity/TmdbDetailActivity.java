@@ -477,7 +477,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         setupInlineFocusNavigation();
         binding.playerPrev.setOnClickListener(view -> playAdjacentEpisode(-1));
         binding.playerNext.setOnClickListener(view -> playAdjacentEpisode(1));
-        binding.playerQuality.setOnClickListener(view -> cycleInlineQuality());
+        binding.playerQuality.setOnClickListener(view -> showInlineQuality());
         binding.playerParse.setOnClickListener(view -> cycleInlineParse());
         binding.playerSpeed.setOnClickListener(view -> changeInlineSpeed());
         binding.playerSpeed.setOnLongClickListener(view -> resetInlineSpeed());
@@ -527,6 +527,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailActionView(R.id.speed, View.class).setOnClickListener(view -> changeInlineSpeed());
         detailActionView(R.id.speed, View.class).setOnLongClickListener(view -> resetInlineSpeed());
         detailActionView(R.id.scale, View.class).setOnClickListener(view -> cycleInlineScale());
+        detailActionView(R.id.quality, View.class).setOnClickListener(view -> showInlineQuality());
         detailActionView(R.id.reset, View.class).setOnClickListener(view -> refreshInlinePlayback());
         detailActionView(R.id.repeat, View.class).setOnClickListener(view -> toggleInlineRepeat());
         detailActionView(R.id.text, View.class).setOnClickListener(this::showInlineTrack);
@@ -2301,7 +2302,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         boolean hasNext = hasAdjacentEpisode(1);
         setButtonEnabled(binding.playerPrev, hasPrev);
         setButtonEnabled(binding.playerNext, hasNext);
-        setButtonEnabled(binding.playerQuality, currentInlineResult != null && currentInlineResult.getUrl().isMulti());
+        boolean inlineQuality = canChangeInlineQuality();
+        boolean inlineVideoTrackAsQuality = isInlineVideoTrackAsQuality();
+        setButtonEnabled(binding.playerQuality, inlineQuality);
         setButtonEnabled(binding.playerParse, useParse && !VodConfig.get().getParses().isEmpty());
         setButtonEnabled(binding.playerSpeed, hasPlayer);
         setButtonEnabled(binding.playerScale, hasPlayer);
@@ -2322,7 +2325,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerInfo.setVisibility(hasInlineInfo() ? View.VISIBLE : View.GONE);
         binding.playerActionRow.setVisibility(View.VISIBLE);
         binding.playerDanmakuToggle.setVisibility(hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
-        binding.playerQuality.setVisibility(currentInlineResult != null && currentInlineResult.getUrl().isMulti() ? View.VISIBLE : View.GONE);
+        binding.playerQuality.setVisibility(inlineQuality ? View.VISIBLE : View.GONE);
+        binding.playerVideoTrack.setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_VIDEO) && !inlineVideoTrackAsQuality ? View.VISIBLE : View.GONE);
         binding.playerParse.setVisibility(useParse && !VodConfig.get().getParses().isEmpty() ? View.VISIBLE : View.GONE);
         setInlineFullscreenIcon();
         updateMobileInlineButtons(playing, hasPlayer, hasPrev, hasNext);
@@ -2341,6 +2345,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailActionView(R.id.player, TextView.class).setText(binding.playerExternal.getText());
         detailActionView(R.id.decode, TextView.class).setText(binding.playerDecode.getText());
         detailActionView(R.id.scale, TextView.class).setText(binding.playerScale.getText());
+        detailActionView(R.id.quality, TextView.class).setText(binding.playerQuality.getText());
         setButtonEnabled(detailControlView(R.id.prev, View.class), hasPrev);
         setButtonEnabled(detailControlView(R.id.next, View.class), hasNext);
         setButtonEnabled(detailControlView(R.id.fullscreen, View.class), hasPlayer);
@@ -2349,6 +2354,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         setButtonEnabled(detailActionView(R.id.decode, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.speed, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.scale, View.class), hasPlayer);
+        boolean inlineQuality = canChangeInlineQuality();
+        boolean inlineVideoTrackAsQuality = isInlineVideoTrackAsQuality();
+        setButtonEnabled(detailActionView(R.id.quality, View.class), inlineQuality);
         setButtonEnabled(detailActionView(R.id.reset, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.repeat, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.text, View.class), hasPlayer);
@@ -2364,8 +2372,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailControlView(R.id.danmaku, View.class).setVisibility(hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
         detailActionView(R.id.text, View.class).setVisibility(hasPlayer && (player().haveTrack(C.TRACK_TYPE_TEXT) || player().isVod()) ? View.VISIBLE : View.GONE);
         detailActionView(R.id.audio, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_AUDIO) ? View.VISIBLE : View.GONE);
-        detailActionView(R.id.video, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_VIDEO) ? View.VISIBLE : View.GONE);
+        detailActionView(R.id.video, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_VIDEO) && !inlineVideoTrackAsQuality ? View.VISIBLE : View.GONE);
         detailActionView(R.id.danmaku, View.class).setVisibility(hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
+        detailActionView(R.id.quality, View.class).setVisibility(inlineQuality ? View.VISIBLE : View.GONE);
         detailActionView(R.id.repeat, View.class).setSelected(hasPlayer && player().isRepeatOne());
         action.setVisibility(inlineFullscreen ? View.VISIBLE : View.GONE);
         inlineControlController.updateDanmakuState();
@@ -2473,6 +2482,24 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         return TextUtils.isEmpty(name) ? getString(R.string.detail_quality) + " " + (position + 1) : name;
     }
 
+    private boolean canChangeInlineQuality() {
+        return hasInlineUrlQuality() || isInlineVideoTrackAsQuality();
+    }
+
+    private boolean hasInlineUrlQuality() {
+        return currentInlineResult != null && currentInlineResult.getUrl().isMulti();
+    }
+
+    private boolean isInlineVideoTrackAsQuality() {
+        return !hasInlineUrlQuality() && service() != null && player() != null && !player().isEmpty() && player().haveTrack(C.TRACK_TYPE_VIDEO);
+    }
+
+    private String qualityLabel(int position) {
+        if (currentInlineResult == null) return getString(R.string.detail_quality);
+        String name = currentInlineResult.getUrl().n(position);
+        return TextUtils.isEmpty(name) ? getString(R.string.detail_quality) + " " + (position + 1) : name;
+    }
+
     private String parseLabel() {
         String name = VodConfig.get().getParse().getName();
         return TextUtils.isEmpty(name) ? getString(R.string.parse) : name;
@@ -2501,11 +2528,29 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerScale.setText(array[scale]);
     }
 
-    private void cycleInlineQuality() {
-        if (currentInlineResult == null || !currentInlineResult.getUrl().isMulti()) return;
-        saveInlineHistory();
+    private void showInlineQuality() {
+        if (!canChangeInlineQuality()) return;
+        if (!hasInlineUrlQuality()) {
+            TrackDialog.create().type(C.TRACK_TYPE_VIDEO).player(player()).show(this);
+            return;
+        }
         int count = currentInlineResult.getUrl().getValues().size();
-        currentInlineResult.getUrl().set((currentInlineResult.getUrl().getPosition() + 1) % count);
+        String[] labels = new String[count];
+        for (int i = 0; i < count; i++) labels[i] = qualityLabel(i);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.detail_quality)
+                .setSingleChoiceItems(labels, currentInlineResult.getUrl().getPosition(), (dialog, which) -> {
+                    dialog.dismiss();
+                    changeInlineQuality(which);
+                })
+                .show();
+    }
+
+    private void changeInlineQuality(int position) {
+        if (!canChangeInlineQuality() || currentInlineResult.getUrl().getPosition() == position) return;
+        saveInlineHistory();
+        currentInlineResult.getUrl().set(position);
+        updateInlineButtons(service() != null && player() != null && !player().isEmpty() && player().isPlaying());
         startInlinePlayer(currentInlineResult);
     }
 

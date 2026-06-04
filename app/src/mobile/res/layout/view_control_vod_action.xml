@@ -35,6 +35,13 @@
             android:text="@string/play_scale" />
 
         <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/quality"
+            style="@style/Control"
+            android:text="@string/detail_quality"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <com.google.android.material.textview.MaterialTextView
             android:id="@+id/reset"
             style="@style/Control"
             android:text="@string/play_reset" />
