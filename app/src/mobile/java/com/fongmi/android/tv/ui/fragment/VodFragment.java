@@ -12,6 +12,7 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentStatePagerAdapter;
 import androidx.lifecycle.ViewModelProvider;
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewbinding.ViewBinding;
 import androidx.viewpager.widget.ViewPager;
 
@@ -44,6 +45,7 @@ import com.fongmi.android.tv.ui.dialog.LinkDialog;
 import com.fongmi.android.tv.ui.dialog.OneKeySyncDialog;
 import com.fongmi.android.tv.ui.dialog.ReceiveDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.ui.dialog.TypeDialog;
 import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -106,6 +108,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
         mBinding.top.setOnClickListener(this::onTop);
         mBinding.logo.setOnClickListener(this::onLogo);
         mBinding.link.setOnClickListener(this::onLink);
+        mBinding.typeMore.setOnClickListener(this::onTypeMore);
         mBinding.title.setOnClickListener(this::onSite);
         mBinding.title.setOnLongClickListener(this::onReloadConfig);
         mBinding.filter.setOnClickListener(this::onFilter);
@@ -117,15 +120,43 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
             int padding = (int) (ResUtil.dp2px(12) * factor);
             if (mBinding.type.getPaddingTop() == padding) return;
             mBinding.type.setPadding(mBinding.type.getPaddingStart(), padding, mBinding.type.getPaddingEnd(), mBinding.type.getPaddingBottom());
+            mBinding.type.post(this::updateTypeEdge);
+        });
+        mBinding.type.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                updateTypeEdge();
+            }
         });
         mBinding.pager.addOnPageChangeListener(new ViewPager.SimpleOnPageChangeListener() {
             @Override
             public void onPageSelected(int position) {
                 mBinding.type.smoothScrollToPosition(position);
                 mAdapter.setSelected(position);
+                mBinding.type.post(VodFragment.this::updateTypeEdge);
                 setFabVisible(position);
             }
         });
+    }
+
+    private void updateTypeEdge() {
+        if (mBinding.type.getWidth() == 0) return;
+        int right = mBinding.type.getWidth() - mBinding.type.getPaddingRight();
+        for (int i = 0; i < mBinding.type.getChildCount(); i++) {
+            View child = mBinding.type.getChildAt(i);
+            child.setVisibility(mBinding.typeMore.getVisibility() == View.VISIBLE && child.getRight() > right ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void updateTypeMoreVisible() {
+        if (mBinding.type.getWidth() == 0 || mBinding.typeBar.getWidth() == 0) {
+            mBinding.type.post(this::updateTypeMoreVisible);
+            return;
+        }
+        int typeWidth = mBinding.typeBar.getWidth() - mBinding.typeBar.getPaddingStart() - mBinding.typeBar.getPaddingEnd();
+        boolean visible = mAdapter.getItemCount() > 0 && mBinding.type.computeHorizontalScrollRange() > typeWidth;
+        mBinding.typeMore.setVisibility(visible ? View.VISIBLE : View.GONE);
+        mBinding.type.post(this::updateTypeEdge);
     }
 
     private void setRecyclerView() {
@@ -147,9 +178,15 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
     private void setAdapter(Result result) {
         mAdapter.addAll(mResult = result);
         mBinding.pager.getAdapter().notifyDataSetChanged();
+        mBinding.typeMore.setVisibility(View.GONE);
+        mBinding.type.post(this::updateTypeMoreVisible);
         setFabVisible(0);
         hideProgress();
         showContent();
+    }
+
+    private void setTypeMoreVisible() {
+        updateTypeMoreVisible();
     }
 
     private void setFabVisible(int position) {
@@ -190,6 +227,10 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
     private boolean onLink(View view) {
         LinkDialog.show(this);
         return true;
+    }
+
+    private void onTypeMore(View view) {
+        if (mAdapter.getItemCount() > 0) TypeDialog.create().items(mAdapter.getItems()).show(this);
     }
 
     private void onLogo(View view) {
@@ -265,11 +306,13 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
 
     private void hideContent() {
         mBinding.type.setVisibility(View.INVISIBLE);
+        mBinding.typeMore.setVisibility(View.INVISIBLE);
         mBinding.pager.setVisibility(View.INVISIBLE);
     }
 
     private void showContent() {
         mBinding.type.setVisibility(View.VISIBLE);
+        setTypeMoreVisible();
         mBinding.pager.setVisibility(View.VISIBLE);
     }
 
@@ -450,6 +493,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
         setHomeWebTopMargin(mWebFullscreen ? 0 : mHomeWebTopMargin);
         setNavigationVisible(!mWebFullscreen);
         mBinding.type.setVisibility(View.GONE);
+        mBinding.typeMore.setVisibility(View.GONE);
         mBinding.pager.setVisibility(View.GONE);
         mBinding.filter.setVisibility(View.GONE);
         mBinding.link.setVisibility(View.GONE);
@@ -459,6 +503,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
     private void showNativeContent() {
         setWebFullscreen(false);
         mBinding.type.setVisibility(View.VISIBLE);
+        setTypeMoreVisible();
         mBinding.pager.setVisibility(View.VISIBLE);
         mBinding.homeWeb.setVisibility(View.GONE);
     }
@@ -471,6 +516,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
         setNavigationVisible(!fullscreen);
         if (fullscreen) {
             mBinding.type.setVisibility(View.GONE);
+            mBinding.typeMore.setVisibility(View.GONE);
             mBinding.pager.setVisibility(View.GONE);
             mBinding.filter.setVisibility(View.GONE);
             mBinding.link.setVisibility(View.GONE);

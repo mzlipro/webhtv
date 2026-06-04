@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.ui.adapter;
 
 import android.view.LayoutInflater;
+import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
@@ -13,6 +14,7 @@ import com.fongmi.android.tv.databinding.AdapterTypeBinding;
 import com.fongmi.android.tv.utils.ResUtil;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class TypeAdapter extends RecyclerView.Adapter<TypeAdapter.ViewHolder> {
@@ -50,9 +52,14 @@ public class TypeAdapter extends RecyclerView.Adapter<TypeAdapter.ViewHolder> {
     }
 
     public void setSelected(int position) {
+        if (position < 0 || position >= mItems.size()) return;
         for (Class item : mItems) item.setSelected(false);
         mItems.get(position).setSelected(true);
         notifyItemRangeChanged(0, mItems.size());
+    }
+
+    public List<Class> getItems() {
+        return Collections.unmodifiableList(mItems);
     }
 
     public Class get(int position) {
@@ -75,6 +82,7 @@ public class TypeAdapter extends RecyclerView.Adapter<TypeAdapter.ViewHolder> {
         Class item = mItems.get(position);
         holder.binding.text.setText(item.getTypeName());
         holder.binding.text.setSelected(item.isSelected());
+        holder.binding.text.setVisibility(View.VISIBLE);
         holder.binding.text.setOnClickListener(v -> listener.onItemClick(position, item));
     }
 
