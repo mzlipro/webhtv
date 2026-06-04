@@ -2510,22 +2510,31 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private String scaleLabel() {
+        return scaleLabel(getInlineScale());
+    }
+
+    private String scaleLabel(int scale) {
         String[] array = ResUtil.getStringArray(R.array.select_scale);
-        int scale = Math.max(0, Math.min(getInlineScale(), array.length - 1));
-        return array.length == 0 ? getString(R.string.play_scale) : array[scale];
+        int index = Math.max(0, Math.min(scale, array.length - 1));
+        return array.length == 0 ? getString(R.string.play_scale) : array[index];
+    }
+
+    private void setInlineScaleText(CharSequence text) {
+        binding.playerScale.setText(text);
+        if (Util.isMobile() && detailActionRoot != null) detailActionView(R.id.scale, TextView.class).setText(text);
     }
 
     private void setInlineScale(int scale) {
         if (history != null) history.setScale(scale);
         binding.exo.setResizeMode(scale);
-        binding.playerScale.setText(scaleLabel());
+        setInlineScaleText(scaleLabel(scale));
     }
 
     private void setInlinePreviewScale(int scale) {
         String[] array = ResUtil.getStringArray(R.array.select_scale);
         if (scale < 0 || scale >= array.length) return;
         binding.exo.setResizeMode(scale);
-        binding.playerScale.setText(array[scale]);
+        setInlineScaleText(array[scale]);
     }
 
     private void showInlineQuality() {
