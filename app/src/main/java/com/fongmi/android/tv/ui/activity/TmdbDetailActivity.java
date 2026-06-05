@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.GestureDetector;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -135,6 +136,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private static final int CHIP_STROKE_DP = 1;
     private static final int PHOTO_PRELOAD_RADIUS = 2;
     private static final int SHORT_DRAMA_SCALE = 0;
+    private static final int SHORT_DRAMA_FRAME_WIDTH = 9;
+    private static final int SHORT_DRAMA_FRAME_HEIGHT = 16;
 
     private final TmdbService tmdbService = new TmdbService();
     private final List<TmdbPerson> detailCastItems = new ArrayList<>();
@@ -172,6 +175,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private boolean detailPlayerActive;
     private boolean autoPlayed;
     private boolean inlineFullscreen;
+    private boolean inlineShortDramaMode;
     private PlayerGesture inlineGestureDetector;
     private Clock inlineClock;
     private VodPlayerControlController inlineControlController;
@@ -2308,6 +2312,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         inlineStarted = true;
         pendingInlineResult = null;
         hideInlineControls();
+        resetInlineShortDramaMode();
         updateInlineTitle();
         updateInlineButtons(false);
         player().stop();
@@ -3196,16 +3201,92 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         updateInlineDisplayPanel();
         binding.playerPanel.requestFocus();
         Util.toggleFullscreen(this, true);
-        boolean portrait = service() != null && !player().isEmpty() && player().isPortrait();
-        setRequestedOrientation(portrait ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        setInlineFullscreenOrientation();
     }
 
     private void applyInlineShortDramaMode() {
-        if (!isShortDramaSource()) return;
+        if (!isShortDramaSource()) {
+            resetInlineShortDramaMode();
+            return;
+        }
         if (!inlineFullscreen) enterInlineFullscreen();
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT);
+        if (!shouldUseInlineShortDramaMode()) {
+            resetInlineShortDramaMode();
+            setInlineFullscreenOrientation();
+            return;
+        }
+        inlineShortDramaMode = true;
+        setInlineFullscreenOrientation();
+        setInlineShortDramaVideoFrame(!shouldUseShortDramaPortrait());
         setInlinePreviewScale(SHORT_DRAMA_SCALE);
         hideInlineControls();
+    }
+
+    private void resetInlineShortDramaMode() {
+        boolean restoreScale = inlineShortDramaMode;
+        inlineShortDramaMode = false;
+        setInlineShortDramaVideoFrame(false);
+        if (restoreScale && inlineStarted) setInlineScale(getInlineScale());
+    }
+
+    private void setInlineFullscreenOrientation() {
+        if (!inlineFullscreen) return;
+        int orientation = getInlineFullscreenOrientation();
+        if (getRequestedOrientation() != orientation) setRequestedOrientation(orientation);
+    }
+
+    private int getInlineFullscreenOrientation() {
+        if (shouldUseInlineShortDramaMode()) return shouldUseShortDramaPortrait() ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        boolean portrait = service() != null && !player().isEmpty() && player().isPortrait();
+        return portrait ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+    }
+
+    private boolean shouldUseInlineShortDramaMode() {
+        if (!isShortDramaSource()) return false;
+        if (!hasInlineVideoSize()) return true;
+        return player().isPortrait();
+    }
+
+    private boolean shouldUseShortDramaPortrait() {
+        return Util.isMobile() && !ResUtil.isPad();
+    }
+
+    private boolean hasInlineVideoSize() {
+        return service() != null && player() != null && !player().isEmpty() && player().getVideoWidth() > 0 && player().getVideoHeight() > 0;
+    }
+
+    private void setInlineShortDramaVideoFrame(boolean enabled) {
+        if (binding == null) return;
+        if (!enabled) {
+            setInlineVideoFrame(binding.exo, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            setInlineVideoFrame(binding.danmaku, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            return;
+        }
+        int width = binding.playerPanel.getWidth();
+        int height = binding.playerPanel.getHeight();
+        if (width <= 0 || height <= 0) {
+            binding.playerPanel.post(() -> {
+                if (inlineShortDramaMode && inlineFullscreen && binding != null) setInlineShortDramaVideoFrame(true);
+            });
+            return;
+        }
+        int frameWidth;
+        int frameHeight;
+        if (width * SHORT_DRAMA_FRAME_HEIGHT > height * SHORT_DRAMA_FRAME_WIDTH) {
+            frameHeight = height;
+            frameWidth = Math.max(1, height * SHORT_DRAMA_FRAME_WIDTH / SHORT_DRAMA_FRAME_HEIGHT);
+        } else {
+            frameWidth = width;
+            frameHeight = Math.max(1, width * SHORT_DRAMA_FRAME_HEIGHT / SHORT_DRAMA_FRAME_WIDTH);
+        }
+        setInlineVideoFrame(binding.exo, frameWidth, frameHeight);
+        setInlineVideoFrame(binding.danmaku, frameWidth, frameHeight);
+    }
+
+    private void setInlineVideoFrame(View view, int width, int height) {
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
+        params.gravity = Gravity.CENTER;
+        view.setLayoutParams(params);
     }
 
     private void exitInlineFullscreen() {
@@ -3218,6 +3299,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             playerParent.addView(binding.playerPanel, index, playerLayoutParams);
         }
         binding.playerPanel.setTranslationZ(0f);
+        resetInlineShortDramaMode();
         setPlayerCard(lightTheme ? ThemeColors.light() : ThemeColors.dark());
         setInlineFullscreenIcon();
         boolean playing = service() != null && !player().isEmpty() && player().isPlaying();
@@ -3350,6 +3432,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     protected void onSizeChanged(VideoSize size) {
         updateInlineButtons(service() != null && !player().isEmpty() && player().isPlaying());
         updateInlineDisplayPanel();
+        if (inlineStarted && (isShortDramaSource() || inlineShortDramaMode)) applyInlineShortDramaMode();
     }
 
     @Override
