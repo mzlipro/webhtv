@@ -78,6 +78,7 @@
                 android:minHeight="0dp"
                 android:padding="0dp"
                 android:scaleType="center"
+                android:translationY="-4dp"
                 android:visibility="gone"
                 app:srcCompat="@drawable/ic_action_menu"
                 tools:visibility="visible" />

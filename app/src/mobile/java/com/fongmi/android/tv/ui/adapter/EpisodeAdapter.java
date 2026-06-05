@@ -78,6 +78,10 @@ public class EpisodeAdapter extends RecyclerView.Adapter<BaseEpisodeHolder> {
         return getItemCount() == 0;
     }
 
+    public static String getTitle(Episode item) {
+        return item.getDesc().concat(item.getDisplayName());
+    }
+
     @Override
     public int getItemCount() {
         return mItems.size();

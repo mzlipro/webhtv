@@ -6,13 +6,15 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.bean.Class;
 import com.fongmi.android.tv.databinding.DialogTypeBinding;
 import com.fongmi.android.tv.ui.adapter.TypeAdapter;
 import com.fongmi.android.tv.ui.adapter.TypeDialogAdapter;
+import com.google.android.flexbox.FlexDirection;
+import com.google.android.flexbox.FlexWrap;
+import com.google.android.flexbox.FlexboxLayoutManager;
 
 import java.util.List;
 
@@ -44,21 +46,12 @@ public class TypeDialog extends BaseBottomSheetDialog implements TypeAdapter.OnC
 
     @Override
     protected void initView() {
-        binding.recycler.setHasFixedSize(true);
+        binding.recycler.setHasFixedSize(false);
         binding.recycler.setItemAnimator(null);
-        binding.recycler.setLayoutManager(new GridLayoutManager(requireContext(), getSpanCount()));
+        FlexboxLayoutManager manager = new FlexboxLayoutManager(requireContext(), FlexDirection.ROW);
+        manager.setFlexWrap(FlexWrap.WRAP);
+        binding.recycler.setLayoutManager(manager);
         binding.recycler.setAdapter(new TypeDialogAdapter(this, items));
-    }
-
-    private int getSpanCount() {
-        if (items == null || items.isEmpty()) return 3;
-        int length = 0;
-        for (Class item : items) length += item.getTypeName().length();
-        int average = (int) Math.ceil(length * 1f / items.size());
-        if (average >= 12) return 1;
-        if (average >= 8) return 2;
-        if (average >= 4) return 3;
-        return 4;
     }
 
     @Override
