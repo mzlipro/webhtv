@@ -40,6 +40,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
+import com.fongmi.android.tv.api.DanmakuApi;
 import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Danmaku;
@@ -64,6 +65,7 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.player.PlayerHelper;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.service.TmdbService;
+import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.adapter.InlineEpisodeAdapter;
@@ -2303,7 +2305,19 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         Site site = getCurrentSite();
         ensureInlineDanmakuController();
         startPlayer(getHistoryKey(), result, useParse, site == null ? 0 : site.getTimeout(), buildMetadata());
+        searchInlineDanmaku(result);
         binding.playerPanel.requestFocus();
+    }
+
+    private void searchInlineDanmaku(Result result) {
+        if (!DanmakuApi.canSearch() || history == null || selectedEpisode == null) return;
+        DanmakuApi.search(playbackHistoryName(), historyEpisodeTitle(selectedEpisode), danmaku -> applyInlineDanmaku(result, danmaku));
+    }
+
+    private void applyInlineDanmaku(Result result, Danmaku danmaku) {
+        if (isFinishing() || isDestroyed() || service() == null || player() == null || !inlineStarted || result != currentInlineResult || !isOwner()) return;
+        if (DanmakuSetting.isSpiderFirst() && !result.getDanmaku().isEmpty()) player().addDanmaku(danmaku);
+        else player().setDanmaku(danmaku);
     }
 
     private void showInlineError(String text) {
@@ -2988,6 +3002,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         pendingInlineResult = null;
         currentInlineResult = null;
         useParse = false;
+        DanmakuApi.cancel();
         updatePlayLabel();
     }
 
@@ -3145,6 +3160,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         App.removeCallbacks(inlineHideControls);
         saveInlineHistory();
         if (inlineClock != null) inlineClock.release();
+        DanmakuApi.cancel();
         super.onDestroy();
     }
 
