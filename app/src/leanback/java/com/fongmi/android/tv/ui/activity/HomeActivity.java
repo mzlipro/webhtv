@@ -96,6 +96,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     private Clock mClock;
     private boolean initialLoaded;
     private boolean homeHistoryVisible;
+    private boolean homeVodAutoLoad;
     private boolean webToolbarVisible = true;
     private boolean loadingHomeCategory;
 
@@ -209,7 +210,8 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
             mAdapter.remove("progress");
             if (!categoryResult) {
                 Cache.clear().put(result);
-                setTypes(mHomeResult = result);
+                mHomeResult = result;
+                setTypes(result);
             }
             mResult = result;
             addVideo(result);
@@ -217,13 +219,14 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     }
 
     private boolean isHomeCategoryResult(Result result) {
-        return loadingHomeCategory && result.getTypes().isEmpty();
+        return Setting.isHomeVodAutoLoad() && loadingHomeCategory && result.getTypes().isEmpty();
     }
 
     private void setAdapter() {
         mHistoryAdapter = new ArrayObjectAdapter(mPresenter = new HistoryPresenter(this));
         mAdapter.add(new ListRow(mFuncAdapter = new ArrayObjectAdapter(new FuncPresenter(this))));
         homeHistoryVisible = Setting.isHomeHistory();
+        homeVodAutoLoad = Setting.isHomeVodAutoLoad();
         if (homeHistoryVisible) mAdapter.add(R.string.home_history);
         mAdapter.add(R.string.home_recommend);
     }
@@ -305,12 +308,18 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         mResult = Result.empty();
         mHomeResult = Result.empty();
         loadingHomeCategory = false;
+        if (!Setting.isHomeVodAutoLoad()) mBinding.typeRecycler.setVisibility(View.GONE);
         clearRecommendRows();
         mAdapter.add("progress");
         mViewModel.homeContent();
     }
 
     private void setTypes(Result result) {
+        if (!Setting.isHomeVodAutoLoad()) {
+            mTypeAdapter.addAll(java.util.Collections.emptyList());
+            mBinding.typeRecycler.setVisibility(View.GONE);
+            return;
+        }
         if (result.getTypes().isEmpty()) {
             mTypeAdapter.addAll(java.util.Collections.emptyList());
             mBinding.typeRecycler.setVisibility(View.GONE);
@@ -321,7 +330,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     }
 
     private void addVideo(Result result) {
-        if (!loadingHomeCategory && result.getList().isEmpty() && !result.getTypes().isEmpty()) {
+        if (Setting.isHomeVodAutoLoad() && !loadingHomeCategory && result.getList().isEmpty() && !result.getTypes().isEmpty()) {
             Class type = result.getTypes().get(0);
             loadingHomeCategory = true;
             mAdapter.add("progress");
@@ -353,6 +362,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
 
     private void setFunc() {
         List<Func> items = new ArrayList<>();
+        if (!Setting.isHomeVodAutoLoad()) items.add(Func.create(R.string.home_vod));
         if (LiveConfig.hasUrl()) items.add(Func.create(R.string.home_live));
         items.add(Func.create(R.string.home_search));
         items.add(Func.create(R.string.home_keep));
@@ -387,6 +397,13 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         setFunc();
         if (homeHistoryVisible) getHistory(true);
         else removeHistorySection();
+    }
+
+    private void syncHomeVodAutoLoadSetting() {
+        if (homeVodAutoLoad == Setting.isHomeVodAutoLoad()) return;
+        homeVodAutoLoad = Setting.isHomeVodAutoLoad();
+        setFunc();
+        if (initialLoaded) getVideo();
     }
 
     private void ensureHistoryHeader() {
@@ -663,6 +680,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         super.onResume();
         mClock.start();
         if (mWeb != null) mWeb.onResume();
+        syncHomeVodAutoLoadSetting();
         syncHomeHistorySetting();
     }
 

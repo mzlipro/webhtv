@@ -125,6 +125,14 @@ public class Setting {
         Prefers.put("home_history", homeHistory);
     }
 
+    public static boolean isHomeVodAutoLoad() {
+        return Prefers.getBoolean("home_vod_auto_load", true);
+    }
+
+    public static void putHomeVodAutoLoad(boolean autoLoad) {
+        Prefers.put("home_vod_auto_load", autoLoad);
+    }
+
     public static boolean isDriveCheck() {
         return Prefers.getBoolean("drive_check", true);
     }
