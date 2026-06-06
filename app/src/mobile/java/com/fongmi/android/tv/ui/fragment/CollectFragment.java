@@ -47,6 +47,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private CustomScroller mScroller;
     private SiteViewModel mViewModel;
     private List<Site> mSites;
+    private static final int COLLECT_WIDTH = 120;
 
     public static CollectFragment newInstance(String keyword) {
         return newInstance(keyword, "");
@@ -142,7 +143,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.collect.setLayoutManager(new LinearLayoutManager(requireActivity(), horizontal ? LinearLayoutManager.HORIZONTAL : LinearLayoutManager.VERTICAL, false));
         LinearLayoutCompat.LayoutParams collectParams = (LinearLayoutCompat.LayoutParams) mBinding.collect.getLayoutParams();
         LinearLayoutCompat.LayoutParams recyclerParams = (LinearLayoutCompat.LayoutParams) mBinding.recycler.getLayoutParams();
-        collectParams.width = horizontal ? ViewGroup.LayoutParams.MATCH_PARENT : getCollectWidth();
+        collectParams.width = horizontal ? ViewGroup.LayoutParams.MATCH_PARENT : ResUtil.dp2px(COLLECT_WIDTH);
         collectParams.height = horizontal ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
         collectParams.weight = 0;
         collectParams.topMargin = -gap;
@@ -154,16 +155,6 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.recycler.setPadding(horizontal ? gap : 0, 0, gap, gap);
         mBinding.collect.setLayoutParams(collectParams);
         mBinding.recycler.setLayoutParams(recyclerParams);
-    }
-
-    private int getCollectWidth() {
-        int width = 0;
-        int space = ResUtil.dp2px(48);
-        int maxWidth = ResUtil.getScreenWidth() / (getCount() + 1) - ResUtil.dp2px(40);
-        for (Site site : mSites) width = Math.max(width, ResUtil.getTextWidth(site.getName(), 14));
-        int contentWidth = width + space;
-        int minWidth = ResUtil.dp2px(120);
-        return Math.max(minWidth, Math.min(contentWidth, maxWidth));
     }
 
     private boolean isHorizontalUi() {

@@ -21,6 +21,8 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
 
     private static final int VIEW_TYPE_LIST = 1;
     private static final int VIEW_TYPE_GRID = 2;
+    private static final int GRID_ITEM_WIDTH = 100;
+    private static final int GRID_IMAGE_HEIGHT = 133;
 
     private final OnClickListener listener;
     private int columnCount = 1;
@@ -64,7 +66,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        if (viewType == VIEW_TYPE_GRID) return new GridViewHolder(AdapterVodRectBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false)).size(parent, columnCount);
+        if (viewType == VIEW_TYPE_GRID) return new GridViewHolder(AdapterVodRectBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false)).size();
         return new ListViewHolder(AdapterSearchBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false));
     }
 
@@ -113,18 +115,14 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
             this.binding = binding;
         }
 
-        private GridViewHolder size(ViewGroup parent, int columnCount) {
-            int margin = ResUtil.dp2px(16);
-            int available = parent.getWidth() - parent.getPaddingStart() - parent.getPaddingEnd();
-            if (available <= 0) available = ResUtil.getScreenWidth(parent.getContext());
-            int width = Math.max(ResUtil.dp2px(96), available / Math.max(1, columnCount) - margin);
-            binding.getRoot().getLayoutParams().width = width;
-            binding.image.getLayoutParams().height = (int) (width / 0.75f);
+        private GridViewHolder size() {
+            binding.getRoot().getLayoutParams().width = ResUtil.dp2px(GRID_ITEM_WIDTH);
+            binding.image.getLayoutParams().height = ResUtil.dp2px(GRID_IMAGE_HEIGHT);
             return this;
         }
 
         private void bind(Vod item) {
-            if (binding.getRoot().getParent() instanceof ViewGroup parent) size(parent, columnCount);
+            size();
             binding.name.setText(item.getName());
             binding.site.setText(item.getSiteName());
             binding.remark.setText(item.getRemarks());
