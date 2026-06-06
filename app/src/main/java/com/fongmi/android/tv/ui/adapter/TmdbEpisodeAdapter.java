@@ -14,6 +14,7 @@ import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.bean.TmdbEpisode;
 import com.fongmi.android.tv.databinding.AdapterTmdbEpisodeBinding;
 import com.fongmi.android.tv.utils.ImgUtil;
+import com.fongmi.android.tv.utils.Util;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -215,10 +216,21 @@ public class TmdbEpisodeAdapter extends RecyclerView.Adapter<TmdbEpisodeAdapter.
 
     private String episodeBadge(TmdbEpisode episode) {
         if (episode == null) return "";
+        if (Util.isMobile()) {
+            if (episode.getVoteAverage() > 0) return "★" + mobileRating(episode.getVoteAverage());
+            if (episode.getRuntime() > 0) return episode.getRuntime() + "m";
+            return "";
+        }
         List<String> parts = new ArrayList<>();
         if (episode.getVoteAverage() > 0) parts.add("★ " + String.format(Locale.US, "%.1f", episode.getVoteAverage()));
         if (episode.getRuntime() > 0) parts.add(episode.getRuntime() + "m");
         return TextUtils.join(" · ", parts);
+    }
+
+    private String mobileRating(double rating) {
+        double rounded = Math.round(rating * 10.0) / 10.0;
+        if (Math.abs(rounded - Math.rint(rounded)) < 0.001) return String.format(Locale.US, "%.0f", rounded);
+        return String.format(Locale.US, "%.1f", rounded);
     }
 
     @Override
