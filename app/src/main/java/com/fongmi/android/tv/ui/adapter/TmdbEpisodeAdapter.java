@@ -100,7 +100,7 @@ public class TmdbEpisodeAdapter extends RecyclerView.Adapter<TmdbEpisodeAdapter.
         int episodeNumber = episodeNumber(episode, position);
         TmdbEpisode tmdbEpisode = tmdbItems.get(episodeNumber);
         String tmdbTitle = tmdbEpisode != null ? tmdbEpisode.getTitle() : "";
-        String title = episodeTitle(episode, episodeNumber, tmdbTitle);
+        String title = getTitle(episode, episodeNumber, tmdbTitle);
         String date = tmdbEpisode != null ? tmdbEpisode.getDate() : "";
         String overview = tmdbEpisode != null ? tmdbEpisode.getOverview() : episode.getDesc();
         boolean activated = episode.equals(selected);
@@ -193,10 +193,14 @@ public class TmdbEpisodeAdapter extends RecyclerView.Adapter<TmdbEpisodeAdapter.
         view.setBackground(background);
     }
 
-    private String episodeTitle(Episode episode, int number, String tmdbTitle) {
+    public static String getTitle(Episode episode, int number, String tmdbTitle) {
         String label = number > 0 ? String.valueOf(number) : episode.getName();
+        return formatTitle(label, episode.getName(), tmdbTitle);
+    }
+
+    public static String formatTitle(String label, String sourceName, String tmdbTitle) {
         if (TextUtils.isEmpty(tmdbTitle)) return label;
-        if (label.equals(tmdbTitle) || episode.getName().equals(tmdbTitle)) return label;
+        if (TextUtils.equals(label, tmdbTitle) || TextUtils.equals(sourceName, tmdbTitle)) return label;
         return label + ". " + tmdbTitle;
     }
 

@@ -12,7 +12,9 @@ import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdapter.ViewHolder> {
 
@@ -31,6 +33,7 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
 
     private final Listener listener;
     private final List<Episode> items = new ArrayList<>();
+    private final Map<Episode, String> titles = new HashMap<>();
     private Episode selected;
 
     public InlineEpisodeAdapter(Listener listener) {
@@ -38,8 +41,14 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
     }
 
     public void setItems(List<Episode> values, Episode selected) {
+        setItems(values, selected, Map.of());
+    }
+
+    public void setItems(List<Episode> values, Episode selected, Map<Episode, String> titles) {
         items.clear();
         if (values != null) items.addAll(values);
+        this.titles.clear();
+        if (titles != null) this.titles.putAll(titles);
         this.selected = selected;
         notifyDataSetChanged();
     }
@@ -68,7 +77,7 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Episode item = items.get(position);
         boolean active = item.equals(selected);
-        holder.button.setText(EpisodeAdapter.getTitle(item));
+        holder.button.setText(getTitle(item));
         holder.button.setOnFocusChangeListener(null);
         applyState(holder.button, active, holder.button.hasFocus());
         holder.button.setOnFocusChangeListener((view, focused) -> applyState(holder.button, active, focused));
@@ -82,6 +91,11 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
         button.setBackgroundTintList(ColorStateList.valueOf(active ? COLOR_ACTIVE : focused ? COLOR_FOCUS_BG : COLOR_NORMAL));
         button.setStrokeColor(ColorStateList.valueOf(active ? 0xFF2AA46B : focused ? COLOR_FOCUS : 0x44FFFFFF));
         button.setStrokeWidth(ResUtil.dp2px(active || focused ? 2 : 1));
+    }
+
+    private String getTitle(Episode item) {
+        String title = titles.get(item);
+        return TextUtils.isEmpty(title) ? EpisodeAdapter.getTitle(item) : title;
     }
 
     @Override

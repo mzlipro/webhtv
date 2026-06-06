@@ -2206,10 +2206,14 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private String tmdbEpisodeTitle(int number) {
+        return tmdbEpisodeTitle(selectedSeasonNumber, number);
+    }
+
+    private String tmdbEpisodeTitle(int seasonNumber, int number) {
         if (number <= 0) return "";
-        TmdbEpisode tmdbEpisode = tmdbEpisodes.get(number);
+        TmdbEpisode tmdbEpisode = seasonNumber == selectedSeasonNumber || seasonNumber < 0 ? tmdbEpisodes.get(number) : null;
         if (tmdbEpisode != null && !TextUtils.isEmpty(tmdbEpisode.getTitle())) return tmdbEpisode.getTitle();
-        List<TmdbEpisode> episodes = tmdbSeasonEpisodes.get(selectedSeasonNumber);
+        List<TmdbEpisode> episodes = tmdbSeasonEpisodes.get(seasonNumber < 0 ? selectedSeasonNumber : seasonNumber);
         if (episodes == null) return "";
         for (TmdbEpisode episode : episodes) {
             if (episode.getNumber() == number && !TextUtils.isEmpty(episode.getTitle())) return episode.getTitle();
@@ -2977,12 +2981,12 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
             @Override
             public boolean onItemLongClick(MaterialButton button, Episode episode) {
-                Notify.show(EpisodeAdapter.getTitle(episode));
+                Notify.show(inlineEpisodeTitle(episode));
                 return true;
             }
         });
         recycler.setAdapter(adapter);
-        adapter.setItems(selectedFlag.getEpisodes(), selectedEpisode);
+        adapter.setItems(selectedFlag.getEpisodes(), selectedEpisode, inlineEpisodeTitles(selectedFlag.getEpisodes()));
 
         AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.detail_episode)
@@ -3059,7 +3063,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
             @Override
             public boolean onItemLongClick(MaterialButton button, Episode episode) {
-                Notify.show(EpisodeAdapter.getTitle(episode));
+                Notify.show(inlineEpisodeTitle(episode));
                 return true;
             }
         });
@@ -3079,7 +3083,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             pageIndex[0] = Math.max(0, Math.min(index, pageCount - 1));
             int start = pageIndex[0] * pageSize;
             int end = Math.min(start + pageSize, ordered.size());
-            adapter.setItems(ordered.subList(start, end), selectedEpisode);
+            adapter.setItems(ordered.subList(start, end), selectedEpisode, inlineEpisodeTitles(selectedFlag.getEpisodes()));
             for (int i = 0; i < pageButtons.size(); i++) applyEpisodeDialogPageState(pageButtons.get(i), i == pageIndex[0], pageButtons.get(i).hasFocus());
             if (!focusEpisode) return;
             int selected = ordered.subList(start, end).indexOf(selectedEpisode);
@@ -3149,6 +3153,40 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         button.requestFocus();
         scroll.post(() -> scroll.smoothScrollTo(Math.max(0, button.getLeft() - ResUtil.dp2px(12)), 0));
         return true;
+    }
+
+    private Map<Episode, String> inlineEpisodeTitles(List<Episode> episodes) {
+        Map<Episode, String> titles = new HashMap<>();
+        if (episodes == null) return titles;
+        for (Episode episode : episodes) titles.put(episode, inlineEpisodeTitle(episode, episodes));
+        return titles;
+    }
+
+    private String inlineEpisodeTitle(Episode episode) {
+        return inlineEpisodeTitle(episode, selectedFlag == null ? null : selectedFlag.getEpisodes());
+    }
+
+    private String inlineEpisodeTitle(Episode episode, List<Episode> episodes) {
+        EpisodePosition position = episodePosition(episode, episodes);
+        String title = tmdbEpisodeTitle(position.season(), position.number());
+        if (TextUtils.isEmpty(title)) return EpisodeAdapter.getTitle(episode);
+        return TmdbEpisodeAdapter.getTitle(episode, position.number(), title);
+    }
+
+    private EpisodePosition episodePosition(Episode episode, List<Episode> episodes) {
+        int index = episode == null || episodes == null ? -1 : episodes.indexOf(episode);
+        if (index < 0) return new EpisodePosition(selectedSeasonNumber, episodeNumberForHistory(episode));
+        if (seasonNumbers.size() <= 1 || selectedSeasonNumber < 0) return new EpisodePosition(selectedSeasonNumber, index + 1);
+        int start = 0;
+        for (int i = 0; i < seasonNumbers.size(); i++) {
+            Integer season = seasonNumbers.get(i);
+            int count = Math.max(0, seasonEpisodeCounts.getOrDefault(season, 0));
+            if (count <= 0) continue;
+            int end = i == seasonNumbers.size() - 1 ? episodes.size() : Math.min(episodes.size(), start + count);
+            if (index >= start && index < end) return new EpisodePosition(season, index - start + 1);
+            start += count;
+        }
+        return new EpisodePosition(selectedSeasonNumber, index + 1);
     }
 
     private List<Episode> orderedInlineEpisodes() {
@@ -4537,6 +4575,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private record TmdbLoadResult(TmdbBundle bundle, List<TmdbItem> searchItems) {
+    }
+
+    private record EpisodePosition(int season, int number) {
     }
 
     private record SourceMatch(Site site, Vod vod, int score) {
