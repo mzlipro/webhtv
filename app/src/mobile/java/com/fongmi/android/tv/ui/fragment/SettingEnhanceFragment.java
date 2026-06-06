@@ -16,6 +16,7 @@ import com.fongmi.android.tv.databinding.FragmentSettingEnhanceBinding;
 import com.fongmi.android.tv.setting.CustomCspSetting;
 import com.fongmi.android.tv.setting.ProxySetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.setting.SiteHealthStore;
 import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.dialog.CustomCspDialog;
 import com.fongmi.android.tv.ui.dialog.DebugLogDialog;
@@ -23,6 +24,7 @@ import com.fongmi.android.tv.ui.dialog.FeatureConfigDialog;
 import com.fongmi.android.tv.ui.dialog.ManagePageDialog;
 import com.fongmi.android.tv.ui.dialog.OneKeySyncDialog;
 import com.fongmi.android.tv.ui.dialog.ShellProxyDialog;
+import com.fongmi.android.tv.ui.dialog.SiteHealthDialog;
 import com.fongmi.android.tv.utils.Notify;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -60,6 +62,8 @@ public class SettingEnhanceFragment extends BaseFragment {
         mBinding.shortDramaConfig.setOnClickListener(this::setShortDramaConfig);
         mBinding.driveCheck.setOnClickListener(this::setDriveCheck);
         mBinding.debugLog.setOnClickListener(this::setDebugLog);
+        mBinding.siteHealthSort.setOnClickListener(view -> SiteHealthDialog.show(this, this::setText));
+        mBinding.siteHealthSort.setOnLongClickListener(this::clearSiteHealth);
         mBinding.managePage.setOnClickListener(view -> ManagePageDialog.show(this));
         mBinding.shellProxy.setOnClickListener(this::setShellProxy);
         mBinding.shellProxyConfig.setOnClickListener(this::setShellProxyConfig);
@@ -75,6 +79,7 @@ public class SettingEnhanceFragment extends BaseFragment {
         mBinding.shortDramaConfigText.setText(ShortDramaConfig.objectFrom(Setting.getShortDramaConfig()).getDisplayRules());
         mBinding.driveCheckText.setText(getSwitch(Setting.isDriveCheck()));
         mBinding.debugLogText.setText(getSwitch(Setting.isDebugLog()));
+        mBinding.siteHealthSortText.setText(getSwitch(Setting.isSiteHealthSort()));
         mBinding.managePageText.setText(R.string.manage_page_web);
         int proxyRuleCount = ProxySetting.count();
         mBinding.shellProxyText.setText(getSwitch(Setting.isShellProxy()) + " · " + getString(R.string.setting_proxy_rule_count, proxyRuleCount));
@@ -169,6 +174,12 @@ public class SettingEnhanceFragment extends BaseFragment {
 
     private void setOneKeySync(View view) {
         OneKeySyncDialog.create().show(requireActivity());
+    }
+
+    private boolean clearSiteHealth(View view) {
+        SiteHealthStore.clear();
+        Notify.show(R.string.site_health_clear_done);
+        return true;
     }
 
     @Override

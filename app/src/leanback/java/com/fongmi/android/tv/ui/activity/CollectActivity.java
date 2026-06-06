@@ -31,6 +31,7 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.databinding.ActivityCollectBinding;
 import com.fongmi.android.tv.model.SiteViewModel;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.setting.SiteHealthStore;
 import com.fongmi.android.tv.ui.adapter.CollectAdapter;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.CustomViewPager;
@@ -245,12 +246,14 @@ public class CollectActivity extends BaseActivity implements CollectAdapter.OnCl
     }
 
     private void setSites() {
-        if (!isSiteSearch()) {
-            mSites = VodConfig.get().getSites().stream().filter(Site::isSearchable).toList();
-            return;
+        String siteKey = getSiteKey();
+        mSites = new ArrayList<>();
+        for (Site site : VodConfig.get().getSites()) {
+            if (!site.isSearchable()) continue;
+            if (!siteKey.isEmpty() && !site.getKey().equals(siteKey)) continue;
+            mSites.add(site);
         }
-        Site site = VodConfig.get().getSite(getSiteKey());
-        mSites = site.isSearchable() ? List.of(site) : List.of();
+        SiteHealthStore.sortSites(mSites);
     }
 
     private void setPager() {
@@ -382,5 +385,12 @@ public class CollectActivity extends BaseActivity implements CollectAdapter.OnCl
         @Override
         public void restoreState(@Nullable Parcelable state, @Nullable ClassLoader loader) {
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (mViewModel != null) mViewModel.stopSearch();
+        SiteHealthStore.flush();
+        super.onDestroy();
     }
 }

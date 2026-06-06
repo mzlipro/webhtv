@@ -28,6 +28,7 @@ import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.databinding.FragmentCollectBinding;
 import com.fongmi.android.tv.model.SiteViewModel;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.setting.SiteHealthStore;
 import com.fongmi.android.tv.ui.activity.FolderActivity;
 import com.fongmi.android.tv.ui.activity.VideoActivity;
 import com.fongmi.android.tv.ui.adapter.CollectAdapter;
@@ -37,6 +38,7 @@ import com.fongmi.android.tv.ui.custom.CustomScroller;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class CollectFragment extends BaseFragment implements MenuProvider, CollectAdapter.OnClickListener, SearchAdapter.OnClickListener, CustomScroller.Callback {
@@ -128,12 +130,14 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     }
 
     private void setSites() {
-        if (!isSiteSearch()) {
-            mSites = VodConfig.get().getSites().stream().filter(Site::isSearchable).toList();
-            return;
+        String siteKey = getSiteKey();
+        mSites = new ArrayList<>();
+        for (Site site : VodConfig.get().getSites()) {
+            if (!site.isSearchable()) continue;
+            if (!TextUtils.isEmpty(siteKey) && !site.getKey().equals(siteKey)) continue;
+            mSites.add(site);
         }
-        Site site = VodConfig.get().getSite(getSiteKey());
-        mSites = site.isSearchable() ? List.of(site) : List.of();
+        SiteHealthStore.sortSites(mSites);
     }
 
     private void setCollectLayout() {
@@ -285,6 +289,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     public void onDestroyView() {
         super.onDestroyView();
         mViewModel.stopSearch();
+        SiteHealthStore.flush();
         requireActivity().removeMenuProvider(this);
     }
 }

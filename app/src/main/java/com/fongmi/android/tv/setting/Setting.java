@@ -173,6 +173,22 @@ public class Setting {
         return column < 0 || column > 2 ? 0 : column;
     }
 
+    public static boolean isSiteHealthSort() {
+        return Prefers.getBoolean("site_health_sort", true);
+    }
+
+    public static void putSiteHealthSort(boolean sort) {
+        Prefers.put("site_health_sort", sort);
+    }
+
+    public static boolean isSiteHealthDialogSort() {
+        return Prefers.getBoolean("site_health_dialog_sort");
+    }
+
+    public static void putSiteHealthDialogSort(boolean sort) {
+        Prefers.put("site_health_dialog_sort", sort);
+    }
+
     public static boolean isDebugLog() {
         return DebugLogStore.isEnabled();
     }

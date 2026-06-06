@@ -57,6 +57,7 @@ import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.setting.SiteHealthStore;
 import com.fongmi.android.tv.ui.adapter.ArrayAdapter;
 import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
 import com.fongmi.android.tv.ui.adapter.FlagAdapter;
@@ -86,6 +87,7 @@ import com.fongmi.android.tv.utils.Sniffer;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.Traffic;
 import com.fongmi.android.tv.utils.Util;
+import com.github.catvod.crawler.SpiderDebug;
 import com.github.bassaer.library.MDColor;
 
 import org.greenrobot.eventbus.Subscribe;
@@ -125,6 +127,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private boolean initAuto;
     private boolean autoMode;
     private boolean useParse;
+    private boolean detailHealthRecorded;
+    private boolean playHealthRecorded;
     private Runnable mR1;
     private Runnable mR2;
     private Runnable mR3;
@@ -132,6 +136,9 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private Clock mClock;
     private View mFocus1;
     private View mFocus2;
+    private String playHealthKey;
+    private long detailStartTime;
+    private long playerStartTime;
 
     public static void push(FragmentActivity activity, String text) {
         if (FileChooser.isValid(activity, Uri.parse(text))) file(activity, FileChooser.getPathFromUri(Uri.parse(text)));
@@ -490,6 +497,9 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private void getDetail() {
+        detailStartTime = System.currentTimeMillis();
+        detailHealthRecorded = false;
+        SpiderDebug.log("video-flow", "detail start key=%s id=%s name=%s", getKey(), getId(), getName());
         mViewModel.detailContent(getKey(), getId());
     }
 
@@ -507,6 +517,9 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private void setDetail(Result result) {
+        long cost = System.currentTimeMillis() - detailStartTime;
+        SpiderDebug.log("video-flow", "detail finish cost=%dms empty=%s msg=%s", cost, result.getList().isEmpty(), result.getMsg());
+        recordDetailHealth(result, cost);
         if (result.getList().isEmpty()) setEmpty(result.hasMsg());
         else setDetail(result.getVod());
         Notify.show(result.getMsg());
@@ -585,6 +598,9 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void getPlayer(Flag flag, Episode episode) {
         mBinding.widget.title.setText(getString(R.string.detail_title, mBinding.name.getText(), episode.getName()));
+        playerStartTime = System.currentTimeMillis();
+        beginPlayHealth();
+        SpiderDebug.log("video-flow", "player start key=%s flag=%s episode=%s url=%s", getKey(), flag.getFlag(), episode.getName(), episode.getUrl());
         mViewModel.playerContent(getKey(), flag.getFlag(), episode.getUrl());
         mBinding.widget.title.setSelected(true);
         updateHistory(episode);
@@ -629,6 +645,25 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             if (DanmakuSetting.isSpiderFirst() && !result.getDanmaku().isEmpty()) player().addDanmaku(danmaku);
             else player().setDanmaku(danmaku);
         }
+    }
+
+    private void recordDetailHealth(Result result, long cost) {
+        if (detailHealthRecorded) return;
+        detailHealthRecorded = true;
+        boolean success = result != null && !result.getList().isEmpty();
+        String error = result == null ? "" : result.hasMsg() ? result.getMsg() : success ? "" : "empty";
+        SiteHealthStore.recordDetail(getKey(), success, cost, error);
+    }
+
+    private void beginPlayHealth() {
+        playHealthKey = getKey();
+        playHealthRecorded = false;
+    }
+
+    private void recordPlayHealth(boolean success, String error) {
+        if (playHealthRecorded) return;
+        playHealthRecorded = true;
+        SiteHealthStore.recordPlay(TextUtils.isEmpty(playHealthKey) ? getKey() : playHealthKey, success, error);
     }
 
     @Override
@@ -694,6 +729,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         player().switchPlayer(mHistory.getPlayerOrDefault());
         updateHistoryPlayer();
         setPlayer();
+        beginPlayHealth();
         startPlayer(getHistoryKey(), result, isUseParse(), getSite().getTimeout(), buildMetadata());
     }
 
@@ -1346,6 +1382,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     @Override
     protected void onError(String msg) {
+        recordPlayHealth(false, msg);
         Track.delete(player().getKey());
         mClock.setCallback(null);
         player().resetTrack();
@@ -1368,6 +1405,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
                 showProgress();
                 break;
             case Player.STATE_READY:
+                recordPlayHealth(true, "");
                 hideProgress();
                 player().reset();
                 applyShortDramaMode();
@@ -1503,6 +1541,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         mQuickAdapter.clear();
         List<Site> sites = new ArrayList<>();
         for (Site site : VodConfig.get().getSites()) if (isPass(site)) sites.add(site);
+        SiteHealthStore.sortSites(sites);
         mViewModel.searchContent(sites, keyword, true);
     }
 
@@ -1544,9 +1583,10 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void nextSite() {
         if (mQuickAdapter.getItemCount() == 0) return;
-        Vod item = mQuickAdapter.get(0);
+        int position = mQuickAdapter.getBestPosition();
+        Vod item = mQuickAdapter.get(position);
         Notify.show(getString(R.string.play_switch_site, item.getSiteName()));
-        mQuickAdapter.remove(0);
+        mQuickAdapter.remove(position);
         mBroken.add(getId());
         setInitAuto(false);
         getDetail(item);
@@ -1740,6 +1780,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         mViewModel.getResult().removeObserver(mObserveDetail);
         mViewModel.getPlayer().removeObserver(mObservePlayer);
         mViewModel.getSearch().removeObserver(mObserveSearch);
+        SiteHealthStore.flush();
         super.onDestroy();
     }
 }
