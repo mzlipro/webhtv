@@ -2709,9 +2709,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void updateInlineTitle() {
         if (!isInlinePlayerMode()) return;
-        String title = vod != null ? vod.getName() : getNameText();
-        String episode = selectedEpisode != null ? selectedEpisode.getName() : "";
-        binding.playerTitle.setText(TextUtils.isEmpty(episode) || episode.equals(title) ? title : title + "  " + episode);
+        String title = playbackHistoryName();
+        String episode = selectedEpisode != null ? inlineEpisodeTitle(selectedEpisode) : "";
+        binding.playerTitle.setText(TextUtils.isEmpty(episode) || TextUtils.equals(episode, title) ? title : title + "  " + episode);
     }
 
     private String qualityLabel() {
