@@ -70,6 +70,7 @@ import com.fongmi.android.tv.service.TmdbService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
 import com.fongmi.android.tv.ui.adapter.InlineEpisodeAdapter;
 import com.fongmi.android.tv.ui.adapter.TmdbEpisodeAdapter;
 import com.fongmi.android.tv.ui.adapter.TmdbPersonAdapter;
@@ -2967,9 +2968,18 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         content.addView(recycler, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height));
 
         AlertDialog[] holder = new AlertDialog[1];
-        InlineEpisodeAdapter adapter = new InlineEpisodeAdapter(episode -> {
-            if (holder[0] != null) holder[0].dismiss();
-            selectInlineEpisode(episode);
+        InlineEpisodeAdapter adapter = new InlineEpisodeAdapter(new InlineEpisodeAdapter.Listener() {
+            @Override
+            public void onItemClick(Episode episode) {
+                if (holder[0] != null) holder[0].dismiss();
+                selectInlineEpisode(episode);
+            }
+
+            @Override
+            public boolean onItemLongClick(MaterialButton button, Episode episode) {
+                Notify.show(EpisodeAdapter.getTitle(episode));
+                return true;
+            }
         });
         recycler.setAdapter(adapter);
         adapter.setItems(selectedFlag.getEpisodes(), selectedEpisode);
@@ -3039,10 +3049,19 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         RecyclerView recycler = new RecyclerView(this);
         recycler.setClipToPadding(false);
         recycler.setLayoutManager(new GridLayoutManager(this, 3));
-        InlineEpisodeAdapter adapter = new InlineEpisodeAdapter(episode -> {
-            Dialog dialog = (Dialog) panel.getTag();
-            if (dialog != null) dialog.dismiss();
-            selectInlineEpisode(episode);
+        InlineEpisodeAdapter adapter = new InlineEpisodeAdapter(new InlineEpisodeAdapter.Listener() {
+            @Override
+            public void onItemClick(Episode episode) {
+                Dialog dialog = (Dialog) panel.getTag();
+                if (dialog != null) dialog.dismiss();
+                selectInlineEpisode(episode);
+            }
+
+            @Override
+            public boolean onItemLongClick(MaterialButton button, Episode episode) {
+                Notify.show(EpisodeAdapter.getTitle(episode));
+                return true;
+            }
         });
         recycler.setAdapter(adapter);
         LinearLayout.LayoutParams recyclerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ResUtil.dp2px(314));
@@ -3053,7 +3072,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         final int[] pageIndex = {0};
         final List<TextView> pageButtons = new ArrayList<>();
         final Runnable[] render = new Runnable[1];
-        final java.util.function.IntConsumer showPage = index -> {
+        final java.util.function.BiConsumer<Integer, Boolean> showPage = (index, focusEpisode) -> {
             List<Episode> ordered = orderedInlineEpisodes();
             if (ordered.isEmpty()) return;
             int pageCount = (int) Math.ceil(ordered.size() / (float) pageSize);
@@ -3062,6 +3081,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             int end = Math.min(start + pageSize, ordered.size());
             adapter.setItems(ordered.subList(start, end), selectedEpisode);
             for (int i = 0; i < pageButtons.size(); i++) applyEpisodeDialogPageState(pageButtons.get(i), i == pageIndex[0], pageButtons.get(i).hasFocus());
+            if (!focusEpisode) return;
             int selected = ordered.subList(start, end).indexOf(selectedEpisode);
             if (selected < 0) selected = 0;
             int focus = selected;
@@ -3087,17 +3107,18 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 int end = Math.min(start + pageSize, ordered.size());
                 TextView button = createEpisodeDialogPageButton((start + 1) + " - " + end, i == selectedPage);
                 int page = i;
-                button.setOnClickListener(view -> showPage.accept(page));
+                button.setOnClickListener(view -> showPage.accept(page, true));
                 button.setOnFocusChangeListener((view, focused) -> {
                     applyEpisodeDialogPageState(button, page == pageIndex[0], focused);
-                    if (focused && page != pageIndex[0]) showPage.accept(page);
+                    if (focused && page != pageIndex[0]) showPage.accept(page, false);
                 });
+                button.setOnKeyListener((view, keyCode, event) -> moveEpisodeDialogPageFocus(pageButtons, pageScroll, page, keyCode, event, target -> showPage.accept(target, false)));
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ResUtil.dp2px(136), ResUtil.dp2px(34));
                 params.setMargins(0, ResUtil.dp2px(5), ResUtil.dp2px(12), ResUtil.dp2px(5));
                 pageRow.addView(button, params);
                 pageButtons.add(button);
             }
-            showPage.accept(selectedPage);
+            showPage.accept(selectedPage, true);
         };
         reverse.setOnClickListener(view -> {
             toggleEpisodeReverse();
@@ -3116,6 +3137,18 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             int width = (int) (ResUtil.getScreenWidth(this) * 0.84f);
             window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
         }
+    }
+
+    private boolean moveEpisodeDialogPageFocus(List<TextView> buttons, HorizontalScrollView scroll, int position, int keyCode, KeyEvent event, java.util.function.IntConsumer showPage) {
+        if (keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+        int target = position + (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+        if (target < 0 || target >= buttons.size()) return true;
+        TextView button = buttons.get(target);
+        showPage.accept(target);
+        button.requestFocus();
+        scroll.post(() -> scroll.smoothScrollTo(Math.max(0, button.getLeft() - ResUtil.dp2px(12)), 0));
+        return true;
     }
 
     private List<Episode> orderedInlineEpisodes() {

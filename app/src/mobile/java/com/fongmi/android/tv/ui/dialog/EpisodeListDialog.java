@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.databinding.DialogEpisodeListBinding;
 import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
 import com.fongmi.android.tv.ui.base.ViewType;
+import com.fongmi.android.tv.ui.custom.EpisodeTitlePopup;
 import com.fongmi.android.tv.utils.ResUtil;
 
 import java.util.List;
@@ -45,9 +46,16 @@ public class EpisodeListDialog extends BaseSideSheetDialog implements EpisodeAda
     @Override
     protected int getWidth() {
         int minWidth = ResUtil.dp2px(200);
-        int maxWidth = ResUtil.getScreenWidth() / 3;
-        for (Episode item : episodes) minWidth = Math.max(minWidth, ResUtil.getTextWidth(item.getName(), 14));
+        int screenWidth = ResUtil.getScreenWidth(requireActivity());
+        int maxWidth = ResUtil.isLand(requireActivity()) ? (int) (screenWidth * 0.42f) : screenWidth / 3;
+        for (Episode item : episodes) minWidth = Math.max(minWidth, ResUtil.getTextWidth(EpisodeAdapter.getTitle(item), 13) + ResUtil.dp2px(32));
         return Math.min(minWidth, maxWidth);
+    }
+
+    @Override
+    public void onDestroyView() {
+        EpisodeTitlePopup.dismiss();
+        super.onDestroyView();
     }
 
     @Override

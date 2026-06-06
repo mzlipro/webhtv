@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.ui.dialog;
 
 import android.content.DialogInterface;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -136,6 +137,24 @@ public class EpisodeDialog extends BaseAlertDialog {
         focusEpisode(focusEpisode);
     }
 
+    private boolean movePageFocus(int position, int keyCode, KeyEvent event) {
+        if (keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+        int target = position + (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+        if (target < 0 || target >= pages.size()) return true;
+        showPage(target, false);
+        focusPage(target);
+        return true;
+    }
+
+    private void focusPage(int position) {
+        binding.page.post(() -> {
+            RecyclerView.ViewHolder holder = binding.page.findViewHolderForAdapterPosition(position);
+            if (holder != null) holder.itemView.requestFocus();
+            else binding.page.requestFocus();
+        });
+    }
+
     private void focusEpisode(boolean requestFocus) {
         binding.recycler.post(() -> {
             int position = adapter.getSelectedPosition();
@@ -181,8 +200,11 @@ public class EpisodeDialog extends BaseAlertDialog {
         }
 
         void setSelected(int selected) {
+            int old = this.selected;
             this.selected = selected;
-            notifyItemRangeChanged(0, getItemCount());
+            if (old == selected) return;
+            if (old >= 0 && old < getItemCount()) notifyItemChanged(old);
+            if (selected >= 0 && selected < getItemCount()) notifyItemChanged(selected);
         }
 
         @Override
@@ -204,6 +226,7 @@ public class EpisodeDialog extends BaseAlertDialog {
             holder.binding.text.setOnFocusChangeListener((view, hasFocus) -> {
                 if (hasFocus && pageIndex != position) showPage(position);
             });
+            holder.binding.text.setOnKeyListener((view, keyCode, event) -> movePageFocus(position, keyCode, event));
             holder.binding.getRoot().setOnClickListener(view -> focusEpisode(true));
         }
 

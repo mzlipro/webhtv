@@ -25,6 +25,8 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
 
     public interface Listener {
         void onItemClick(Episode item);
+
+        boolean onItemLongClick(MaterialButton button, Episode item);
     }
 
     private final Listener listener;
@@ -51,7 +53,8 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
         button.setInsetTop(0);
         button.setInsetBottom(0);
         button.setSingleLine(true);
-        button.setEllipsize(TextUtils.TruncateAt.END);
+        button.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        button.setMarqueeRepeatLimit(-1);
         button.setAllCaps(false);
         button.setTextSize(16f);
         button.setPadding(ResUtil.dp2px(10), 0, ResUtil.dp2px(10), 0);
@@ -70,9 +73,11 @@ public class InlineEpisodeAdapter extends RecyclerView.Adapter<InlineEpisodeAdap
         applyState(holder.button, active, holder.button.hasFocus());
         holder.button.setOnFocusChangeListener((view, focused) -> applyState(holder.button, active, focused));
         holder.button.setOnClickListener(view -> listener.onItemClick(item));
+        holder.button.setOnLongClickListener(view -> listener.onItemLongClick(holder.button, item));
     }
 
     private void applyState(MaterialButton button, boolean active, boolean focused) {
+        button.setSelected(active || focused);
         button.setTextColor(active ? 0xFFFFFFFF : focused ? COLOR_FOCUS_TEXT : COLOR_TEXT);
         button.setBackgroundTintList(ColorStateList.valueOf(active ? COLOR_ACTIVE : focused ? COLOR_FOCUS_BG : COLOR_NORMAL));
         button.setStrokeColor(ColorStateList.valueOf(active ? 0xFF2AA46B : focused ? COLOR_FOCUS : 0x44FFFFFF));

@@ -13,6 +13,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter;
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.databinding.DialogEpisodeGridBinding;
 import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
+import com.fongmi.android.tv.ui.custom.EpisodeTitlePopup;
 import com.fongmi.android.tv.ui.fragment.EpisodeFragment;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.tabs.TabLayoutMediator;
@@ -89,7 +90,7 @@ public class EpisodeGridDialog extends BaseBottomSheetDialog {
     }
 
     private void setSpanCount() {
-        int avg = (int) Math.ceil(episodes.stream().mapToInt(e -> e.getName().length()).average().orElse(0));
+        int avg = (int) Math.ceil(episodes.stream().mapToInt(e -> EpisodeAdapter.getTitle(e).length()).average().orElse(0));
         if (avg >= 12) spanCount = 1;
         else if (avg >= 8) spanCount = 2;
         else if (avg >= 4) spanCount = 3;
@@ -115,6 +116,12 @@ public class EpisodeGridDialog extends BaseBottomSheetDialog {
                 break;
             }
         }
+    }
+
+    @Override
+    public void onDestroyView() {
+        EpisodeTitlePopup.dismiss();
+        super.onDestroyView();
     }
 
     class PageAdapter extends FragmentStateAdapter {

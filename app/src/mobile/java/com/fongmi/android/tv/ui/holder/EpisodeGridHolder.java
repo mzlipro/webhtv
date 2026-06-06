@@ -20,8 +20,10 @@ public class EpisodeGridHolder extends BaseEpisodeHolder {
 
     @Override
     public void initView(Episode item) {
-        binding.text.setSelected(item.isSelected());
-        binding.text.setText(item.getDesc().concat(item.getName()));
-        binding.text.setOnClickListener(v -> listener.onItemClick(item));
+        EpisodeAdapter.bindTitle(binding.text, item);
+        binding.text.setOnClickListener(v -> {
+            EpisodeAdapter.dismissTitlePopup();
+            listener.onItemClick(item);
+        });
     }
 }

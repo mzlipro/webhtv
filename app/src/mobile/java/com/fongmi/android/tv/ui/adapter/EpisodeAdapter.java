@@ -9,10 +9,12 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.databinding.AdapterEpisodeGridBinding;
 import com.fongmi.android.tv.databinding.AdapterEpisodeHoriBinding;
+import com.fongmi.android.tv.ui.custom.EpisodeTitlePopup;
 import com.fongmi.android.tv.ui.base.BaseEpisodeHolder;
 import com.fongmi.android.tv.ui.base.ViewType;
 import com.fongmi.android.tv.ui.holder.EpisodeGridHolder;
 import com.fongmi.android.tv.ui.holder.EpisodeHoriHolder;
+import com.google.android.material.textview.MaterialTextView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -80,6 +82,22 @@ public class EpisodeAdapter extends RecyclerView.Adapter<BaseEpisodeHolder> {
 
     public static String getTitle(Episode item) {
         return item.getDesc().concat(item.getDisplayName());
+    }
+
+    public static void bindTitle(MaterialTextView text, Episode item) {
+        String title = getTitle(item);
+        text.setText(title);
+        applyMarquee(text, item.isSelected(), text.hasFocus());
+        text.setOnFocusChangeListener((view, hasFocus) -> applyMarquee(text, item.isSelected(), hasFocus));
+        text.setOnLongClickListener(view -> EpisodeTitlePopup.show(view, title));
+    }
+
+    public static void dismissTitlePopup() {
+        EpisodeTitlePopup.dismiss();
+    }
+
+    private static void applyMarquee(MaterialTextView text, boolean selected, boolean focused) {
+        text.setSelected(selected || focused);
     }
 
     @Override
