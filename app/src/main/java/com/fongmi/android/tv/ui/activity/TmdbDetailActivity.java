@@ -193,6 +193,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private View inlineControlFocus;
     private long lastInlineControlInteraction;
     private long inlineKeySeekTime;
+    private boolean inlineKeySpeedChanging;
     private float inlineGestureSpeed = 1.0f;
     private boolean inlineStartPositionApplied;
     private long inlineStartPosition = C.TIME_UNSET;
@@ -681,8 +682,23 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (!isInlinePlayerMode() || service() == null || player() == null || player().isEmpty()) return;
         binding.gestureAction.setImageResource(time > 0 ? R.drawable.ic_widget_forward : R.drawable.ic_widget_rewind);
         binding.gestureTime.setText(player().getPositionTime(time));
+        binding.gestureDuration.setText(player().getDurationTime());
         binding.gestureSeek.setVisibility(View.VISIBLE);
         hideInlineControls();
+        updateInlineDisplayPanel();
+    }
+
+    private void showInlinePauseInfo() {
+        if (!isInlinePlayerMode() || service() == null || player() == null || player().isEmpty()) return;
+        binding.gestureAction.setImageResource(R.drawable.ic_widget_play);
+        binding.gestureTime.setText(player().getPositionTime(0));
+        binding.gestureDuration.setText(player().getDurationTime());
+        binding.gestureSeek.setVisibility(View.VISIBLE);
+        updateInlineDisplayPanel();
+    }
+
+    private void hideInlinePauseInfo() {
+        binding.gestureSeek.setVisibility(View.GONE);
         updateInlineDisplayPanel();
     }
 
@@ -2658,11 +2674,12 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private void updateInlineDisplayPanel() {
         if (binding == null) return;
         boolean hasPlayer = isInlinePlayerMode() && service() != null && player() != null && !player().isEmpty();
+        boolean centerVisible = binding.gestureSeek.getVisibility() == View.VISIBLE;
         boolean canShow = hasPlayer && inlineControlsView().getVisibility() != View.VISIBLE && binding.playerProgress.getVisibility() != View.VISIBLE && binding.playerError.getVisibility() != View.VISIBLE;
         boolean showTitle = canShow && PlayerSetting.isDisplayTitle() && !TextUtils.isEmpty(inlineTitleText());
         boolean showSize = canShow && PlayerSetting.isDisplaySize() && !TextUtils.isEmpty(player().getSizeText());
-        boolean showProgress = canShow && PlayerSetting.isDisplayProgress() && player().getDuration() > 0;
-        boolean showMini = !showProgress && canShow && PlayerSetting.isDisplayMini() && player().getDuration() > 0;
+        boolean showProgress = !centerVisible && canShow && PlayerSetting.isDisplayProgress() && player().getDuration() > 0;
+        boolean showMini = !centerVisible && !showProgress && canShow && PlayerSetting.isDisplayMini() && player().getDuration() > 0;
         binding.playerDisplayTitle.setText(inlineTitleText());
         binding.playerDisplaySize.setText(showSize ? player().getSizeText() : "");
         tintInlineDisplay();
@@ -2671,7 +2688,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerDisplayTopLeft.setVisibility(showTitle || showSize ? View.VISIBLE : View.GONE);
         binding.playerDisplayClock.setText(TIME_FORMAT.format(LocalDateTime.now()));
         binding.playerDisplayClock.setVisibility(canShow && PlayerSetting.isDisplayTime() ? View.VISIBLE : View.GONE);
-        if (canShow && PlayerSetting.isDisplayTraffic()) Traffic.setSpeed(binding.playerDisplayTraffic);
+        if (!centerVisible && canShow && PlayerSetting.isDisplayTraffic()) Traffic.setSpeed(binding.playerDisplayTraffic);
         else binding.playerDisplayTraffic.setVisibility(View.GONE);
         binding.playerDisplayBottomProgress.setVisibility(showProgress ? View.VISIBLE : View.GONE);
         binding.playerDisplayMini.setVisibility(showMini ? View.VISIBLE : View.GONE);
@@ -3503,22 +3520,38 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             if (KeyUtil.isActionUp(event)) hideInlineControls();
             return true;
         }
+        if (KeyUtil.isBackKey(event) && binding.gestureSeek.getVisibility() == View.VISIBLE) {
+            if (KeyUtil.isActionUp(event)) hideInlineGestureOverlays();
+            return true;
+        }
         if (isInlineControlsVisible()) {
             rememberInlineControlFocus();
             setInlineHideCallback();
         }
         if (handleInlineSeekKey(event)) return true;
-        if (!inlineFullscreen || isInlineControlsVisible() || service() == null) return false;
-        if (KeyUtil.isMenuKey(event)) {
-            showInlineControls(true);
+        if (KeyUtil.isMenuKey(event) && (inlineFullscreen || isInlineControlsVisible())) {
+            if (isInlineControlsVisible()) hideInlineControls();
+            else showInlineControls(true);
             return true;
         }
+        if (!inlineFullscreen || isInlineControlsVisible() || service() == null) return false;
         if (KeyUtil.isEnterKey(event)) {
             if (KeyUtil.isActionUp(event)) toggleInlinePlayback();
             return true;
         }
+        if (event.isLongPress() && KeyUtil.isUpKey(event)) {
+            onSpeedUp();
+            inlineKeySpeedChanging = true;
+            return true;
+        }
         if (!KeyUtil.isActionUp(event)) return false;
-        if (KeyUtil.isUpKey(event) || KeyUtil.isDownKey(event)) {
+        if (KeyUtil.isUpKey(event)) {
+            if (inlineKeySpeedChanging) onSpeedEnd();
+            else showInlineControls(true);
+            inlineKeySpeedChanging = false;
+            return true;
+        }
+        if (KeyUtil.isDownKey(event)) {
             showInlineControls(true);
             return true;
         }
@@ -3607,6 +3640,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     @Override
     protected void onPlayingChanged(boolean isPlaying) {
+        if (isPlaying) hideInlinePauseInfo();
+        else if (isPaused()) showInlinePauseInfo();
         updateInlineButtons(isPlaying);
         updateInlineDisplayPanel();
     }
@@ -3676,6 +3711,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     protected void onBackInvoked() {
         if (isInlineControlsVisible()) {
             hideInlineControls();
+            return;
+        }
+        if (binding.gestureSeek.getVisibility() == View.VISIBLE) {
+            hideInlineGestureOverlays();
             return;
         }
         if (inlineFullscreen) {
