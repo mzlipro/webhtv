@@ -1236,7 +1236,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.right.rotate.setVisibility(isFullscreen() && !isLock() && !shortDrama ? View.VISIBLE : View.GONE);
         mBinding.control.keep.setVisibility(mHistory == null ? View.GONE : View.VISIBLE);
         mBinding.control.parse.setVisibility(isFullscreen() && isUseParse() ? View.VISIBLE : View.GONE);
-        mBinding.control.action.getRoot().setVisibility(isFullscreen() && !shortDrama ? View.VISIBLE : View.GONE);
+        mBinding.control.action.getRoot().setVisibility(isFullscreen() ? View.VISIBLE : View.GONE);
         mBinding.control.right.lock.setVisibility(isFullscreen() ? View.VISIBLE : View.GONE);
         mBinding.control.info.setVisibility(player().isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.control.intro.setVisibility(shortDrama && !player().isEmpty() ? View.VISIBLE : View.GONE);
@@ -1876,7 +1876,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void updateSideControlMargins() {
-        int margin = ResUtil.dp2px(isFullscreen() ? SIDE_CONTROL_FULLSCREEN_MARGIN_DP : SIDE_CONTROL_MARGIN_DP);
+        int margin = ResUtil.dp2px(isFullscreen() && !isShortDramaSource() ? SIDE_CONTROL_FULLSCREEN_MARGIN_DP : SIDE_CONTROL_MARGIN_DP);
         setStartMargin((View) mBinding.control.danmaku.getParent(), margin);
         setEndMargin(mBinding.control.right.getRoot(), margin);
     }

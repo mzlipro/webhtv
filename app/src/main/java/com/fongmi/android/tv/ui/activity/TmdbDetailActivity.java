@@ -189,6 +189,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private PlayerGesture inlineGestureDetector;
     private Clock inlineClock;
     private VodPlayerControlController inlineControlController;
+    private InlineParseAdapter inlineParseAdapter;
     private final Runnable inlineHideControls = this::hideInlineControlsIfIdle;
     private final Runnable inlineKeySeekEnd = this::onInlineKeySeekEnd;
     private Result pendingInlineResult;
@@ -595,7 +596,15 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailActionView(R.id.danmaku, View.class).setOnClickListener(view -> showInlineDanmaku());
         detailActionView(R.id.episodes, View.class).setOnClickListener(view -> showInlineEpisodes());
         detailActionView(R.id.chapter, View.class).setVisibility(View.GONE);
+        setupMobileInlineParse();
         detailControlRoot.setOnTouchListener(this::onInlineControlTouch);
+    }
+
+    private void setupMobileInlineParse() {
+        RecyclerView parse = detailControlView(R.id.parse, RecyclerView.class);
+        parse.setHasFixedSize(true);
+        parse.setItemAnimator(null);
+        parse.setAdapter(inlineParseAdapter = new InlineParseAdapter());
     }
 
     private void inflateMobileInlineControl() {
@@ -2761,6 +2770,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailControlView(R.id.info, View.class).setVisibility(!locked && hasInlineInfo() ? View.VISIBLE : View.GONE);
         detailControlView(R.id.setting, View.class).setVisibility(!locked && hasPlayer ? View.VISIBLE : View.GONE);
         detailControlView(R.id.danmaku, View.class).setVisibility(!locked && hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.parse, RecyclerView.class).setVisibility(!locked && inlineFullscreen && useParse && !VodConfig.get().getParses().isEmpty() ? View.VISIBLE : View.GONE);
+        if (inlineParseAdapter != null) inlineParseAdapter.notifyDataSetChanged();
         detailActionView(R.id.text, View.class).setVisibility(hasPlayer && (player().haveTrack(C.TRACK_TYPE_TEXT) || player().isVod()) ? View.VISIBLE : View.GONE);
         detailActionView(R.id.audio, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_AUDIO) ? View.VISIBLE : View.GONE);
         detailActionView(R.id.video, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_VIDEO) && !inlineVideoTrackAsQuality ? View.VISIBLE : View.GONE);
@@ -3047,9 +3058,49 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         Parse current = VodConfig.get().getParse();
         int index = parses.indexOf(current);
         Parse next = parses.get(index < 0 || index == parses.size() - 1 ? 0 : index + 1);
+        changeInlineParse(next);
+    }
+
+    private void changeInlineParse(Parse next) {
+        if (!useParse || next == null || next.isSelected()) return;
         VodConfig.get().setParse(next);
+        if (inlineParseAdapter != null) inlineParseAdapter.notifyDataSetChanged();
         Notify.show(getString(R.string.play_switch_parse, next.getName()));
         playInline();
+    }
+
+    private final class InlineParseAdapter extends RecyclerView.Adapter<InlineParseAdapter.ViewHolder> {
+
+        @NonNull
+        @Override
+        public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            TextView text = new TextView(parent.getContext(), null, 0, R.style.Control);
+            text.setGravity(Gravity.CENTER);
+            return new ViewHolder(text);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+            Parse item = VodConfig.get().getParses().get(position);
+            holder.text.setText(item.getName());
+            holder.text.setSelected(item.isSelected());
+            holder.text.setOnClickListener(view -> changeInlineParse(item));
+        }
+
+        @Override
+        public int getItemCount() {
+            return VodConfig.get().getParses().size();
+        }
+
+        private final class ViewHolder extends RecyclerView.ViewHolder {
+
+            private final TextView text;
+
+            private ViewHolder(@NonNull TextView text) {
+                super(text);
+                this.text = text;
+            }
+        }
     }
 
     private void changeInlineSpeed() {

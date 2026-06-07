@@ -415,8 +415,16 @@ public class Setting {
     }
 
     public static boolean hasFileAccess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return Environment.isExternalStorageManager();
-        return ContextCompat.checkSelfPermission(App.get(), Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED && ContextCompat.checkSelfPermission(App.get(), Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return Environment.isExternalStorageManager() || hasLegacyFileAccess();
+        return hasLegacyFileAccess();
+    }
+
+    private static boolean hasLegacyFileAccess() {
+        boolean read = ContextCompat.checkSelfPermission(App.get(), Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        boolean write = ContextCompat.checkSelfPermission(App.get(), Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return read && App.get().getApplicationInfo().targetSdkVersion < Build.VERSION_CODES.R;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return read && (write || Environment.isExternalStorageLegacy());
+        return read && write;
     }
 
     public static boolean hasFileManager() {
