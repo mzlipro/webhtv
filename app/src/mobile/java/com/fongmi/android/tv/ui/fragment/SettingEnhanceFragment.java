@@ -31,7 +31,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 public class SettingEnhanceFragment extends BaseFragment {
 
     private static final int[] SEARCH_THREADS = {1, 2, 4, 6, 8, 10, 12, 16, 20, 32};
-    private static final int[] DETAIL_OPEN_MODES = {Setting.DETAIL_OPEN_FUSION, Setting.DETAIL_OPEN_ENHANCED, Setting.DETAIL_OPEN_CINEMA, Setting.DETAIL_OPEN_DIRECT};
+    private static final int[] DETAIL_OPEN_MODES = {Setting.DETAIL_OPEN_FUSION, Setting.DETAIL_OPEN_ENHANCED, Setting.DETAIL_OPEN_PLAYER, Setting.DETAIL_OPEN_DIRECT};
+    private static final int[] DETAIL_THEME_MODES = {Setting.DETAIL_STYLE_PROFILE, Setting.DETAIL_STYLE_CINEMA};
 
     private FragmentSettingEnhanceBinding mBinding;
 
@@ -56,6 +57,7 @@ public class SettingEnhanceFragment extends BaseFragment {
     @Override
     protected void initEvent() {
         mBinding.detailOpenMode.setOnClickListener(this::setDetailOpenMode);
+        mBinding.detailThemeMode.setOnClickListener(this::setDetailThemeMode);
         mBinding.searchThread.setOnClickListener(this::setSearchThread);
         mBinding.tmdbConfig.setOnClickListener(this::setTmdbConfig);
         mBinding.audioConfig.setOnClickListener(this::setAudioConfig);
@@ -73,6 +75,8 @@ public class SettingEnhanceFragment extends BaseFragment {
 
     private void setText() {
         mBinding.detailOpenModeText.setText(getDetailOpenMode());
+        mBinding.detailThemeMode.setVisibility(Setting.isTmdbDetailPage() ? View.VISIBLE : View.GONE);
+        mBinding.detailThemeModeText.setText(getDetailThemeMode());
         mBinding.searchThreadText.setText(String.valueOf(Setting.getSearchThread()));
         mBinding.tmdbConfigText.setText(TmdbConfig.objectFrom(Setting.getTmdbConfig()).isReady() ? R.string.setting_configured : R.string.setting_unconfigured);
         mBinding.audioConfigText.setText(AudioConfig.objectFrom(Setting.getAudioConfig()).getDisplayRules());
@@ -102,7 +106,18 @@ public class SettingEnhanceFragment extends BaseFragment {
     }
 
     private String[] getDetailOpenModes() {
-        return new String[]{getString(R.string.setting_detail_open_fusion), getString(R.string.setting_detail_open_enhanced), getString(R.string.setting_detail_open_cinema), getString(R.string.setting_detail_open_direct)};
+        return new String[]{getString(R.string.setting_detail_open_fusion), getString(R.string.setting_detail_open_enhanced), getString(R.string.setting_detail_open_player), getString(R.string.setting_detail_open_direct)};
+    }
+
+    private String getDetailThemeMode() {
+        String[] labels = getDetailThemeModes();
+        int mode = Setting.getTmdbDetailStyle();
+        for (int i = 0; i < DETAIL_THEME_MODES.length; i++) if (DETAIL_THEME_MODES[i] == mode) return labels[i];
+        return labels[0];
+    }
+
+    private String[] getDetailThemeModes() {
+        return new String[]{getString(R.string.setting_detail_theme_profile), getString(R.string.setting_detail_theme_cinema)};
     }
 
     private void setSearchThread(View view) {
@@ -125,7 +140,7 @@ public class SettingEnhanceFragment extends BaseFragment {
                 return;
             }
             Setting.putDetailOpenMode(mode);
-            mBinding.detailOpenModeText.setText(getDetailOpenMode());
+            setText();
             dialog.dismiss();
         }).show();
     }
@@ -138,6 +153,21 @@ public class SettingEnhanceFragment extends BaseFragment {
 
     private boolean requiresTmdb(int mode) {
         return Setting.isTmdbMode(mode);
+    }
+
+    private void setDetailThemeMode(View view) {
+        if (!Setting.isTmdbDetailPage()) return;
+        new MaterialAlertDialogBuilder(requireActivity()).setTitle(R.string.setting_detail_theme_mode).setNegativeButton(R.string.dialog_negative, null).setSingleChoiceItems(getDetailThemeModes(), getDetailThemeModeIndex(), (dialog, which) -> {
+            Setting.putTmdbDetailStyle(DETAIL_THEME_MODES[which]);
+            setText();
+            dialog.dismiss();
+        }).show();
+    }
+
+    private int getDetailThemeModeIndex() {
+        int mode = Setting.getTmdbDetailStyle();
+        for (int i = 0; i < DETAIL_THEME_MODES.length; i++) if (DETAIL_THEME_MODES[i] == mode) return i;
+        return 0;
     }
 
     private void setTmdbConfig(View view) {

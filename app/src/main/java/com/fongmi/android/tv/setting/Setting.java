@@ -28,6 +28,9 @@ public class Setting {
     public static final int DETAIL_OPEN_ENHANCED = 1;
     public static final int DETAIL_OPEN_DIRECT = 2;
     public static final int DETAIL_OPEN_CINEMA = 3;
+    public static final int DETAIL_OPEN_PLAYER = 4;
+    public static final int DETAIL_STYLE_PROFILE = 0;
+    public static final int DETAIL_STYLE_CINEMA = 1;
 
     public static String getDoh() {
         return Prefers.getString("doh");
@@ -322,7 +325,14 @@ public class Setting {
     public static int getDetailOpenMode() {
         int mode;
         if (Prefers.getPrefers().contains("detail_open_mode")) {
-            mode = clampDetailOpenMode(Prefers.getInt("detail_open_mode", DETAIL_OPEN_ENHANCED));
+            int stored = Prefers.getInt("detail_open_mode", DETAIL_OPEN_ENHANCED);
+            if (stored == DETAIL_OPEN_CINEMA) {
+                if (!Prefers.getPrefers().contains("tmdb_detail_style")) putTmdbDetailStyle(DETAIL_STYLE_CINEMA);
+                mode = DETAIL_OPEN_ENHANCED;
+                Prefers.put("detail_open_mode", mode);
+            } else {
+                mode = clampDetailOpenMode(stored);
+            }
         } else if (Prefers.getPrefers().contains("search_detail_page")) {
             mode = Prefers.getBoolean("search_detail_page") ? DETAIL_OPEN_ENHANCED : DETAIL_OPEN_DIRECT;
         } else {
@@ -332,11 +342,22 @@ public class Setting {
     }
 
     public static void putDetailOpenMode(int mode) {
+        if (mode == DETAIL_OPEN_CINEMA) {
+            putTmdbDetailStyle(DETAIL_STYLE_CINEMA);
+            mode = DETAIL_OPEN_ENHANCED;
+        }
         Prefers.put("detail_open_mode", clampDetailOpenMode(mode));
     }
 
     public static int nextDetailOpenMode() {
-        return (getDetailOpenMode() + 1) % 4;
+        int[] modes = {DETAIL_OPEN_FUSION, DETAIL_OPEN_ENHANCED, DETAIL_OPEN_PLAYER, DETAIL_OPEN_DIRECT};
+        int mode = getDetailOpenMode();
+        for (int i = 0; i < modes.length; i++) if (modes[i] == mode) return modes[(i + 1) % modes.length];
+        return DETAIL_OPEN_ENHANCED;
+    }
+
+    public static boolean isTmdbDetailPage() {
+        return isTmdbMode(getDetailOpenMode());
     }
 
     public static boolean isSearchDetailPage() {
@@ -344,11 +365,15 @@ public class Setting {
     }
 
     public static boolean isCinemaDetailPage() {
-        return getDetailOpenMode() == DETAIL_OPEN_CINEMA;
+        return isTmdbDetailPage() && isTmdbCinemaStyle();
     }
 
     public static boolean isFusionDetailPage() {
         return getDetailOpenMode() == DETAIL_OPEN_FUSION;
+    }
+
+    public static boolean isPlayerDetailPage() {
+        return getDetailOpenMode() == DETAIL_OPEN_PLAYER;
     }
 
     public static boolean isDirectDetailPage() {
@@ -360,12 +385,29 @@ public class Setting {
     }
 
     private static int clampDetailOpenMode(int mode) {
-        if (mode < DETAIL_OPEN_FUSION || mode > DETAIL_OPEN_CINEMA) return DETAIL_OPEN_ENHANCED;
-        return mode;
+        if (mode == DETAIL_OPEN_CINEMA) return DETAIL_OPEN_ENHANCED;
+        if (mode == DETAIL_OPEN_FUSION || mode == DETAIL_OPEN_ENHANCED || mode == DETAIL_OPEN_DIRECT || mode == DETAIL_OPEN_PLAYER) return mode;
+        return DETAIL_OPEN_ENHANCED;
     }
 
     public static boolean isTmdbMode(int mode) {
-        return mode == DETAIL_OPEN_FUSION || mode == DETAIL_OPEN_ENHANCED || mode == DETAIL_OPEN_CINEMA;
+        return mode == DETAIL_OPEN_FUSION || mode == DETAIL_OPEN_ENHANCED || mode == DETAIL_OPEN_PLAYER;
+    }
+
+    public static int getTmdbDetailStyle() {
+        return clampTmdbDetailStyle(Prefers.getInt("tmdb_detail_style", DETAIL_STYLE_PROFILE));
+    }
+
+    public static void putTmdbDetailStyle(int style) {
+        Prefers.put("tmdb_detail_style", clampTmdbDetailStyle(style));
+    }
+
+    public static boolean isTmdbCinemaStyle() {
+        return getTmdbDetailStyle() == DETAIL_STYLE_CINEMA;
+    }
+
+    private static int clampTmdbDetailStyle(int style) {
+        return style == DETAIL_STYLE_CINEMA ? DETAIL_STYLE_CINEMA : DETAIL_STYLE_PROFILE;
     }
 
     public static int getTmdbDetailTheme() {

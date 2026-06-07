@@ -577,9 +577,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
 
     @Override
     public void onItemClick(History item) {
-        if (Setting.isSearchDetailPage()) TmdbDetailActivity.startPlayback(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic(), item.getVodRemarks(), false);
-        else if (Setting.isCinemaDetailPage()) TmdbDetailActivity.startPlayback(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic(), item.getVodRemarks(), Setting.DETAIL_OPEN_CINEMA);
-        else if (Setting.isFusionDetailPage()) TmdbDetailActivity.startPlayback(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic(), item.getVodRemarks(), true);
+        if (Setting.isTmdbDetailPage()) TmdbDetailActivity.startPlayback(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic(), item.getVodRemarks(), Setting.getDetailOpenMode());
         else VideoActivity.startDirect(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic(), item.getVodRemarks());
     }
 

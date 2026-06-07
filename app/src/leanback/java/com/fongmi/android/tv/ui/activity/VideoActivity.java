@@ -180,7 +180,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private static boolean shouldOpenIntermediateDetail(String key, boolean cast) {
-        return canOpenEnhancedDetail(key, cast) && (Setting.isSearchDetailPage() || Setting.isCinemaDetailPage());
+        return canOpenEnhancedDetail(key, cast) && Setting.isTmdbDetailPage() && !Setting.isFusionDetailPage();
     }
 
     public static void startDirect(Activity activity, String key, String id, String name, String pic) {
@@ -219,8 +219,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private static void startInternal(Activity activity, String key, String id, String name, String pic, String mark, boolean collect, boolean cast, boolean skipIntermediate) {
         if (AudioActivity.startSite(activity, key, id, name, pic, mark)) return;
         if (!skipIntermediate && shouldOpenIntermediateDetail(key, cast)) {
-            if (Setting.isCinemaDetailPage()) TmdbDetailActivity.startCinema(activity, key, id, name, pic, mark);
-            else TmdbDetailActivity.start(activity, key, id, name, pic, mark);
+            TmdbDetailActivity.start(activity, key, id, name, pic, mark);
             return;
         }
         if (!skipIntermediate && shouldOpenFusionDetail(key, cast)) {

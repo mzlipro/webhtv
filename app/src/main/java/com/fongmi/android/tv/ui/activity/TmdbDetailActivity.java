@@ -226,7 +226,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     public static void start(Activity activity, String key, String id, String name, String pic, String mark, @Nullable TmdbItem tmdbItem) {
-        start(activity, key, id, name, pic, mark, tmdbItem, Setting.DETAIL_OPEN_ENHANCED, false);
+        start(activity, key, id, name, pic, mark, tmdbItem, Setting.getDetailOpenMode(), false);
     }
 
     public static void start(Activity activity, String key, String id, String name, String pic, String mark, @Nullable TmdbItem tmdbItem, int detailMode) {
@@ -271,8 +271,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             return;
         }
         Intent intent = new Intent(activity, TmdbDetailActivity.class);
+        boolean cinemaStyle = detailMode == Setting.DETAIL_OPEN_CINEMA;
         detailMode = normalizeDetailMode(detailMode);
-        intent.putExtra("detail_mode", detailMode);
+        intent.putExtra("detail_mode", cinemaStyle ? Setting.DETAIL_OPEN_CINEMA : detailMode);
         intent.putExtra("fusion", detailMode == Setting.DETAIL_OPEN_FUSION);
         intent.putExtra("auto_play", autoPlay);
         intent.putExtra("key", key);
@@ -2027,7 +2028,17 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         saveInlineHistory();
         updateInlineHistory(selectedEpisode);
         if (isFusionMode()) playInline();
-        else playDetailFullscreen();
+        else if (isPlayerMode()) playDetailFullscreen();
+        else playDefaultPlayback();
+    }
+
+    private void playDefaultPlayback() {
+        TmdbPlaybackActivity.start(this, getKeyText(), getIdText(), playbackHistoryName(), playbackHistoryPic(), playbackMark(), selectedTmdbEpisodeTitles(), playbackTmdbItem(), playbackTmdbVod());
+    }
+
+    private String playbackMark() {
+        if (selectedEpisode != null && !TextUtils.isEmpty(selectedEpisode.getName())) return selectedEpisode.getName();
+        return getMarkText();
     }
 
     private void setTopMargin(View view, int dp) {
@@ -2424,8 +2435,12 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         return getDetailMode() == Setting.DETAIL_OPEN_FUSION || getIntent().getBooleanExtra("fusion", false);
     }
 
+    private boolean isPlayerMode() {
+        return getDetailMode() == Setting.DETAIL_OPEN_PLAYER;
+    }
+
     private boolean isCinemaMode() {
-        return getDetailMode() == Setting.DETAIL_OPEN_CINEMA;
+        return getIntent().getIntExtra("detail_mode", Setting.getDetailOpenMode()) == Setting.DETAIL_OPEN_CINEMA || Setting.isTmdbCinemaStyle();
     }
 
     private int getDetailMode() {
@@ -2435,7 +2450,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private int detailModeTitle() {
         if (isFusionMode()) return R.string.setting_detail_open_fusion;
-        if (isCinemaMode()) return R.string.setting_detail_open_cinema;
+        if (isPlayerMode()) return R.string.setting_detail_open_player;
         return R.string.setting_detail_open_enhanced;
     }
 

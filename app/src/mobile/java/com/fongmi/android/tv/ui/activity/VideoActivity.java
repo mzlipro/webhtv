@@ -201,7 +201,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private static boolean shouldOpenIntermediateDetail(String key) {
-        return canOpenEnhancedDetail(key) && (Setting.isSearchDetailPage() || Setting.isCinemaDetailPage());
+        return canOpenEnhancedDetail(key) && Setting.isTmdbDetailPage() && !Setting.isFusionDetailPage();
     }
 
     public static void startDirect(Activity activity, String key, String id, String name, String pic) {
@@ -240,8 +240,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private static void startInternal(Activity activity, String key, String id, String name, String pic, String mark, boolean collect, boolean skipIntermediate) {
         if (AudioActivity.startSite(activity, key, id, name, pic, mark)) return;
         if (!skipIntermediate && shouldOpenIntermediateDetail(key)) {
-            if (Setting.isCinemaDetailPage()) TmdbDetailActivity.startCinema(activity, key, id, name, pic, mark);
-            else TmdbDetailActivity.start(activity, key, id, name, pic, mark);
+            TmdbDetailActivity.start(activity, key, id, name, pic, mark);
             return;
         }
         if (!skipIntermediate && shouldOpenFusionDetail(key)) {
