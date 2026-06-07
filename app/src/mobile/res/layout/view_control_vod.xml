@@ -183,7 +183,7 @@
         android:layout_height="wrap_content"
         android:layout_alignParentStart="true"
         android:layout_centerVertical="true"
-        android:layout_marginStart="48dp"
+        android:layout_marginStart="4dp"
         android:gravity="center"
         android:orientation="vertical">
 
@@ -204,7 +204,7 @@
         android:layout_height="wrap_content"
         android:layout_alignParentEnd="true"
         android:layout_centerVertical="true"
-        android:layout_marginEnd="48dp" />
+        android:layout_marginEnd="4dp" />
 
     <androidx.appcompat.widget.LinearLayoutCompat
         android:id="@+id/bottom"

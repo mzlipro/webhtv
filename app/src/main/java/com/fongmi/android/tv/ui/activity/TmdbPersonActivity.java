@@ -117,7 +117,6 @@ public class TmdbPersonActivity extends BaseActivity {
 
     @Override
     protected void initEvent() {
-        binding.close.setOnClickListener(view -> finish());
         binding.filterAll.setOnClickListener(view -> setFilter("all"));
         binding.filterCast.setOnClickListener(view -> setFilter("cast"));
         binding.filterCrew.setOnClickListener(view -> setFilter("crew"));
@@ -501,7 +500,6 @@ public class TmdbPersonActivity extends BaseActivity {
         int background = light ? 0xFFF4F7FA : 0xFF101820;
         int primary = light ? 0xFF12202D : 0xFFFFFFFF;
         int secondary = light ? 0xB312202D : 0xB3FFFFFF;
-        int control = light ? 0xFFE7EDF3 : 0xFF263442;
         binding.root.setBackgroundColor(background);
         tint(binding.name, primary);
         tint(binding.pageTitle, primary);
@@ -516,8 +514,6 @@ public class TmdbPersonActivity extends BaseActivity {
         tint(binding.worksCount, secondary);
         tint(binding.empty, secondary);
         binding.biography.setTextColor(light ? 0xDD12202D : 0xDDEAF2F8);
-        binding.close.setTextColor(primary);
-        binding.close.setBackgroundTintList(ColorStateList.valueOf(control));
     }
 
     private void tint(TextView view, int color) {

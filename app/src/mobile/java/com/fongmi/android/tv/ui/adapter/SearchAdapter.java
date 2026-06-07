@@ -21,11 +21,10 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
 
     private static final int VIEW_TYPE_LIST = 1;
     private static final int VIEW_TYPE_GRID = 2;
-    private static final int GRID_ITEM_WIDTH = 100;
-    private static final int GRID_IMAGE_HEIGHT = 133;
 
     private final OnClickListener listener;
     private int columnCount = 1;
+    private int gridWidth;
 
     public SearchAdapter(OnClickListener listener) {
         this.listener = listener;
@@ -41,6 +40,13 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         if (this.columnCount == count) return;
         this.columnCount = count;
         notifyDataSetChanged();
+    }
+
+    public void setGridWidth(int gridWidth) {
+        int width = Math.max(0, gridWidth);
+        if (this.gridWidth == width) return;
+        this.gridWidth = width;
+        if (isGrid()) notifyDataSetChanged();
     }
 
     private boolean isGrid() {
@@ -66,7 +72,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        if (viewType == VIEW_TYPE_GRID) return new GridViewHolder(AdapterVodRectBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false)).size();
+        if (viewType == VIEW_TYPE_GRID) return new GridViewHolder(AdapterVodRectBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false)).size(parent, columnCount);
         return new ListViewHolder(AdapterSearchBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false));
     }
 
@@ -115,14 +121,20 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
             this.binding = binding;
         }
 
-        private GridViewHolder size() {
-            binding.getRoot().getLayoutParams().width = ResUtil.dp2px(GRID_ITEM_WIDTH);
-            binding.image.getLayoutParams().height = ResUtil.dp2px(GRID_IMAGE_HEIGHT);
+        private GridViewHolder size(ViewGroup parent, int columnCount) {
+            int count = Math.max(1, columnCount);
+            int margin = ResUtil.dp2px(16);
+            int available = gridWidth;
+            if (available <= 0) available = parent.getWidth() - parent.getPaddingStart() - parent.getPaddingEnd();
+            if (available <= 0) return this;
+            int width = Math.max(ResUtil.dp2px(96), (available - margin * count) / count);
+            binding.getRoot().getLayoutParams().width = width;
+            binding.image.getLayoutParams().height = (int) (width / 0.75f);
             return this;
         }
 
         private void bind(Vod item) {
-            size();
+            if (binding.getRoot().getParent() instanceof ViewGroup parent) size(parent, columnCount);
             binding.name.setText(item.getName());
             binding.site.setText(item.getSiteName());
             binding.remark.setText(item.getRemarks());

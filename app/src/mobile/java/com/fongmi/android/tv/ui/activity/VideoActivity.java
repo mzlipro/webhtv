@@ -122,6 +122,8 @@ import java.util.function.Consumer;
 public class VideoActivity extends PlaybackActivity implements Clock.Callback, CustomKeyDown.Listener, TrackDialog.Listener, ControlDialog.Listener, FlagAdapter.OnClickListener, EpisodeAdapter.OnClickListener, QualityAdapter.OnClickListener, QuickAdapter.OnClickListener, ParseAdapter.OnClickListener, CastDialog.Listener, InfoDialog.Listener {
 
     private static final int SHORT_DRAMA_SCALE = 4;
+    private static final int SIDE_CONTROL_MARGIN_DP = 4;
+    private static final int SIDE_CONTROL_FULLSCREEN_MARGIN_DP = 48;
 
     private ActivityVideoBinding mBinding;
     private ViewGroup.LayoutParams mFrameParams;
@@ -488,6 +490,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.action.danmaku.setVisibility(DanmakuSetting.isLoad() ? View.VISIBLE : View.GONE);
         mBinding.control.action.reset.setText(ResUtil.getStringArray(R.array.select_reset)[Setting.getReset()]);
         setPlayer();
+        updateSideControlMargins();
         mBinding.video.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> mPiP.update(this, view));
     }
 
@@ -1867,6 +1870,29 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void setFullscreen(boolean fullscreen) {
         Util.toggleFullscreen(this, this.fullscreen = fullscreen);
         mBinding.control.fullscreen.setImageResource(fullscreen ? R.drawable.ic_control_fullscreen_exit : R.drawable.ic_control_fullscreen);
+        updateSideControlMargins();
+    }
+
+    private void updateSideControlMargins() {
+        int margin = ResUtil.dp2px(isFullscreen() ? SIDE_CONTROL_FULLSCREEN_MARGIN_DP : SIDE_CONTROL_MARGIN_DP);
+        setStartMargin((View) mBinding.control.danmaku.getParent(), margin);
+        setEndMargin(mBinding.control.right.getRoot(), margin);
+    }
+
+    private void setStartMargin(View view, int margin) {
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (!(params instanceof ViewGroup.MarginLayoutParams)) return;
+        ViewGroup.MarginLayoutParams marginParams = (ViewGroup.MarginLayoutParams) params;
+        marginParams.setMarginStart(margin);
+        view.setLayoutParams(marginParams);
+    }
+
+    private void setEndMargin(View view, int margin) {
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (!(params instanceof ViewGroup.MarginLayoutParams)) return;
+        ViewGroup.MarginLayoutParams marginParams = (ViewGroup.MarginLayoutParams) params;
+        marginParams.setMarginEnd(margin);
+        view.setLayoutParams(marginParams);
     }
 
     private boolean isInitAuto() {

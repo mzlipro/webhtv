@@ -49,7 +49,6 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private CustomScroller mScroller;
     private SiteViewModel mViewModel;
     private List<Site> mSites;
-    private static final int COLLECT_WIDTH = 120;
 
     public static CollectFragment newInstance(String keyword) {
         return newInstance(keyword, "");
@@ -147,7 +146,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.collect.setLayoutManager(new LinearLayoutManager(requireActivity(), horizontal ? LinearLayoutManager.HORIZONTAL : LinearLayoutManager.VERTICAL, false));
         LinearLayoutCompat.LayoutParams collectParams = (LinearLayoutCompat.LayoutParams) mBinding.collect.getLayoutParams();
         LinearLayoutCompat.LayoutParams recyclerParams = (LinearLayoutCompat.LayoutParams) mBinding.recycler.getLayoutParams();
-        collectParams.width = horizontal ? ViewGroup.LayoutParams.MATCH_PARENT : ResUtil.dp2px(COLLECT_WIDTH);
+        collectParams.width = horizontal ? ViewGroup.LayoutParams.MATCH_PARENT : getCollectWidth();
         collectParams.height = horizontal ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
         collectParams.weight = 0;
         collectParams.topMargin = -gap;
@@ -159,6 +158,16 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.recycler.setPadding(horizontal ? gap : 0, 0, gap, gap);
         mBinding.collect.setLayoutParams(collectParams);
         mBinding.recycler.setLayoutParams(recyclerParams);
+        postUpdateGridWidth();
+    }
+
+    private int getCollectWidth() {
+        int width = 0;
+        int space = ResUtil.dp2px(48);
+        int minWidth = ResUtil.dp2px(128);
+        int maxWidth = ResUtil.dp2px(160);
+        for (Site site : mSites) width = Math.max(width, ResUtil.getTextWidth(site.getName(), 14));
+        return Math.max(minWidth, Math.min(width + space, maxWidth));
     }
 
     private boolean isHorizontalUi() {
@@ -180,7 +189,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         setCollectLayout();
         mBinding.collect.post(() -> mBinding.collect.scrollToPosition(position));
         mBinding.recycler.post(() -> {
-            mBinding.recycler.requestLayout();
+            updateGridWidth();
             mSearchAdapter.notifyDataSetChanged();
         });
         requireActivity().invalidateOptionsMenu();
@@ -221,6 +230,16 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         int count = getCount();
         ((GridLayoutManager) (mBinding.recycler.getLayoutManager())).setSpanCount(count);
         mSearchAdapter.setColumnCount(count);
+        postUpdateGridWidth();
+    }
+
+    private void postUpdateGridWidth() {
+        mBinding.recycler.post(this::updateGridWidth);
+    }
+
+    private void updateGridWidth() {
+        int width = mBinding.recycler.getWidth() - mBinding.recycler.getPaddingStart() - mBinding.recycler.getPaddingEnd();
+        if (width > 0) mSearchAdapter.setGridWidth(width);
     }
 
     private void setCollect(Result result) {
