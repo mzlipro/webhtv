@@ -572,6 +572,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailControlView(R.id.keep, View.class).setOnClickListener(view -> onKeep());
         detailControlView(R.id.setting, View.class).setOnClickListener(view -> showInlineDisplay());
         detailControlView(R.id.danmaku, View.class).setOnClickListener(view -> toggleInlineDanmaku());
+        detailControlView(R.id.lock, View.class).setOnClickListener(view -> toggleInlineLock());
+        detailControlView(R.id.rotate, View.class).setOnClickListener(view -> rotateInlineFullscreen());
         detailActionView(R.id.player, View.class).setOnClickListener(view -> toggleInlinePlayer());
         detailActionView(R.id.player, View.class).setOnLongClickListener(view -> inlineControlController.showPlayerInfo());
         detailActionView(R.id.decode, View.class).setOnClickListener(view -> toggleInlineDecode());
@@ -778,6 +780,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     public void onDoubleTap() {
         if (!inlineStarted) {
             onPlay();
+        } else if (isLock()) {
+            showInlineControls(true, false);
         } else if (!inlineFullscreen) {
             enterInlineFullscreen();
         } else {
@@ -815,6 +819,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (!isInlinePlayerMode()) return;
         if (!inlineStarted) {
             onPlay();
+        } else if (isLock() && inlineFullscreen) {
+            showInlineControls(true, false);
         } else if (isInlineControlsVisible()) {
             hideInlineControls();
         } else if (inlineFullscreen) {
@@ -2619,15 +2625,17 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void updateMobileInlineButtons(boolean playing, boolean hasPlayer, boolean hasPrev, boolean hasNext) {
         if (!Util.isMobile()) return;
+        boolean locked = isLock();
         TextView title = detailControlView(R.id.title, TextView.class);
         TextView size = detailControlView(R.id.size, TextView.class);
         View action = detailActionRoot;
         CharSequence titleText = inlineTitleText();
         title.setText(titleText);
-        title.setVisibility(hasPlayer && !TextUtils.isEmpty(titleText) ? View.VISIBLE : View.INVISIBLE);
+        title.setVisibility(!locked && hasPlayer && !TextUtils.isEmpty(titleText) ? View.VISIBLE : View.INVISIBLE);
         inlineControlController.updateSize(size, inlineFullscreen);
         updateMobileInlineControlStatus(hasPlayer);
         detailControlView(R.id.play, ImageView.class).setImageResource(playing ? androidx.media3.ui.R.drawable.exo_icon_pause : androidx.media3.ui.R.drawable.exo_icon_play);
+        detailControlView(R.id.lock, ImageView.class).setImageResource(locked ? R.drawable.ic_control_lock_on : R.drawable.ic_control_lock_off);
         detailActionView(R.id.speed, TextView.class).setText(binding.playerSpeed.getText());
         detailActionView(R.id.player, TextView.class).setText(binding.playerExternal.getText());
         detailActionView(R.id.decode, TextView.class).setText(binding.playerDecode.getText());
@@ -2639,6 +2647,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         setButtonEnabled(detailControlView(R.id.next, View.class), hasNext);
         setButtonEnabled(detailControlView(R.id.fullscreen, View.class), hasPlayer);
         setButtonEnabled(detailControlView(R.id.danmaku, View.class), hasPlayer && inlineControlController.hasDanmakuControl());
+        setButtonEnabled(detailControlView(R.id.lock, View.class), hasPlayer);
+        setButtonEnabled(detailControlView(R.id.rotate, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.player, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.decode, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.speed, View.class), hasPlayer);
@@ -2655,12 +2665,19 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         setButtonEnabled(detailActionView(R.id.ending, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.danmaku, View.class), hasPlayer && inlineControlController.hasDanmakuControl());
         setButtonEnabled(detailActionView(R.id.episodes, View.class), selectedFlag != null && selectedFlag.getEpisodes() != null && !selectedFlag.getEpisodes().isEmpty());
-        detailControlView(R.id.prev, View.class).setVisibility(hasPrev ? View.VISIBLE : View.GONE);
-        detailControlView(R.id.next, View.class).setVisibility(hasNext ? View.VISIBLE : View.GONE);
-        detailControlView(R.id.cast, View.class).setVisibility(hasInlineCast() ? View.VISIBLE : View.GONE);
-        detailControlView(R.id.info, View.class).setVisibility(hasInlineInfo() ? View.VISIBLE : View.GONE);
-        detailControlView(R.id.setting, View.class).setVisibility(hasPlayer ? View.VISIBLE : View.GONE);
-        detailControlView(R.id.danmaku, View.class).setVisibility(hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.top, View.class).setVisibility(locked ? View.GONE : View.VISIBLE);
+        detailControlView(R.id.center, View.class).setVisibility(locked ? View.GONE : View.VISIBLE);
+        detailControlView(R.id.bottom, View.class).setVisibility(locked ? View.GONE : View.VISIBLE);
+        detailControlView(R.id.back, View.class).setVisibility(locked ? View.GONE : View.VISIBLE);
+        detailControlView(R.id.fullscreen, View.class).setVisibility(locked ? View.GONE : View.VISIBLE);
+        detailControlView(R.id.lock, View.class).setVisibility(inlineFullscreen ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.rotate, View.class).setVisibility(inlineFullscreen && !locked && !inlineShortDramaMode ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.prev, View.class).setVisibility(!locked && hasPrev ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.next, View.class).setVisibility(!locked && hasNext ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.cast, View.class).setVisibility(!locked && hasInlineCast() ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.info, View.class).setVisibility(!locked && hasInlineInfo() ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.setting, View.class).setVisibility(!locked && hasPlayer ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.danmaku, View.class).setVisibility(!locked && hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
         detailActionView(R.id.text, View.class).setVisibility(hasPlayer && (player().haveTrack(C.TRACK_TYPE_TEXT) || player().isVod()) ? View.VISIBLE : View.GONE);
         detailActionView(R.id.audio, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_AUDIO) ? View.VISIBLE : View.GONE);
         detailActionView(R.id.video, View.class).setVisibility(hasPlayer && player().haveTrack(C.TRACK_TYPE_VIDEO) && !inlineVideoTrackAsQuality ? View.VISIBLE : View.GONE);
@@ -2669,15 +2686,15 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailActionView(R.id.danmaku, View.class).setVisibility(hasPlayer && inlineControlController.hasDanmakuControl() ? View.VISIBLE : View.GONE);
         detailActionView(R.id.actionQuality, View.class).setVisibility(inlineQuality ? View.VISIBLE : View.GONE);
         detailActionView(R.id.repeat, View.class).setSelected(hasPlayer && player().isRepeatOne());
-        action.setVisibility(inlineFullscreen ? View.VISIBLE : View.GONE);
+        action.setVisibility(inlineFullscreen && !locked ? View.VISIBLE : View.GONE);
         inlineControlController.updateDanmakuState();
     }
 
     private void updateMobileInlineControlStatus(boolean hasPlayer) {
         if (!Util.isMobile()) return;
         View batteryInfo = detailControlView(R.id.batteryInfo, View.class);
-        batteryInfo.setVisibility(hasPlayer ? View.VISIBLE : View.GONE);
-        if (!hasPlayer) return;
+        batteryInfo.setVisibility(hasPlayer && !isLock() ? View.VISIBLE : View.GONE);
+        if (!hasPlayer || isLock()) return;
         updateMobileInlineControlTime();
         updateMobileInlineBatteryIcon();
     }
@@ -3359,6 +3376,25 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         else enterInlineFullscreen();
     }
 
+    private void toggleInlineLock() {
+        if (!Util.isMobile() || !inlineFullscreen) return;
+        setLock(!isLock());
+        if (inlineGestureDetector != null) inlineGestureDetector.setLock(isLock());
+        if (isLock()) {
+            setRequestedOrientation(ResUtil.getScreenOrientation(this));
+            hideInlineGestureOverlays();
+        } else {
+            setInlineFullscreenOrientation();
+        }
+        showInlineControls(true, false);
+    }
+
+    private void rotateInlineFullscreen() {
+        if (!Util.isMobile() || !inlineFullscreen || isLock()) return;
+        touchInlineControls();
+        setRequestedOrientation(ResUtil.isLand(this) ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+    }
+
     private void enterInlineFullscreen() {
         if (inlineFullscreen) return;
         inlineFullscreen = true;
@@ -3472,6 +3508,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (!inlineFullscreen) return;
         boolean closeDetailPlayer = detailPlayerActive && !isFusionMode();
         inlineFullscreen = false;
+        setInlineLock(false);
         ((ViewGroup) binding.playerPanel.getParent()).removeView(binding.playerPanel);
         if (playerParent != null && playerLayoutParams != null) {
             int index = playerIndex < 0 || playerIndex > playerParent.getChildCount() ? playerParent.getChildCount() : playerIndex;
@@ -3492,6 +3529,11 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         playerLayoutParams = null;
         playerIndex = -1;
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    }
+
+    private void setInlineLock(boolean lock) {
+        setLock(lock);
+        if (inlineGestureDetector != null) inlineGestureDetector.setLock(lock);
     }
 
     private void closeDetailFullscreenPlayer() {
@@ -3591,6 +3633,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             if (KeyUtil.isActionUp(event)) hideInlineGestureOverlays();
             return true;
         }
+        if (KeyUtil.isBackKey(event) && isLock() && inlineFullscreen) {
+            if (KeyUtil.isActionUp(event)) showInlineControls(true, false);
+            return true;
+        }
         if (isInlineControlsVisible()) {
             rememberInlineControlFocus();
             setInlineHideCallback();
@@ -3602,6 +3648,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             return true;
         }
         if (!inlineFullscreen || isInlineControlsVisible() || service() == null) return false;
+        if (isLock()) {
+            if (KeyUtil.isActionUp(event)) showInlineControls(true, false);
+            return true;
+        }
         if (KeyUtil.isEnterKey(event)) {
             if (KeyUtil.isActionUp(event)) toggleInlinePlayback();
             return true;
@@ -3787,6 +3837,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         }
         if (binding.gestureSeek.getVisibility() == View.VISIBLE) {
             hideInlineGestureOverlays();
+            return;
+        }
+        if (isLock() && inlineFullscreen) {
+            showInlineControls(true, false);
             return;
         }
         if (inlineFullscreen) {

@@ -107,6 +107,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
     protected void initEvent() {
         mBinding.top.setOnClickListener(this::onTop);
         mBinding.logo.setOnClickListener(this::onLogo);
+        mBinding.logo.setOnLongClickListener(this::onReloadConfig);
         mBinding.link.setOnClickListener(this::onLink);
         mBinding.typeMore.setOnClickListener(this::onTypeMore);
         mBinding.title.setOnClickListener(this::onSite);
