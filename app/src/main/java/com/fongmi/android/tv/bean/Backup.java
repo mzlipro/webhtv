@@ -25,7 +25,7 @@ import java.util.Set;
 
 public class Backup {
 
-    private static final Set<String> APP_PREFS = Set.of("doh", "ua", "wall", "wall_type", "reset", "site_mode", "sync_mode", "sync_paths", "incognito", "drive_check", "drive_check_cache", "shell_proxy", "shell_proxy_rules", "shell_proxy_url", "shell_proxy_hosts", "update", "adblock", "zhuyin", "theme_color", "wall_color", "crash", "render", "size", "scale", "buffer", "background", "short_drama_config", "audio_music_notification", "audio_book_notification", "speed", "caption", "tunnel", "audio_prefer", "video_prefer", "prefer_aac", "subtitle_text_size", "subtitle_position", "boot_live", "across", "change", "invert", "scale_live");
+    private static final Set<String> APP_PREFS = Set.of("doh", "ua", "wall", "wall_type", "reset", "site_mode", "sync_mode", "sync_paths", "incognito", "home_history", "home_vod_auto_load", "play_back_to_detail", "search_thread", "search_ui", "search_column", "site_health_sort", "site_health_dialog_sort", "drive_check", "drive_check_cache", "shell_proxy", "shell_proxy_rules", "shell_proxy_url", "shell_proxy_hosts", "update", "adblock", "zhuyin", "theme_color", "wall_color", "crash", "render", "size", "scale", "buffer", "background", "display_time", "display_traffic", "display_size", "display_progress", "display_mini", "display_title", "short_drama_config", "audio_music_notification", "audio_book_notification", "speed", "caption", "tunnel", "audio_prefer", "video_prefer", "prefer_aac", "subtitle_text_size", "subtitle_position", "boot_live", "across", "change", "invert", "scale_live");
 
     @SerializedName("site")
     private List<Site> site;
