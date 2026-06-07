@@ -1414,6 +1414,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             case Player.STATE_READY:
                 recordPlayHealth(true, "");
                 hideProgress();
+                mClock.setCallback(this);
                 player().reset();
                 applyShortDramaMode();
                 updateDisplayPanel();

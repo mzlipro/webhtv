@@ -1641,6 +1641,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
             case Player.STATE_READY:
                 recordPlayHealth(true, "");
                 hideProgress();
+                mClock.setCallback(this);
                 checkControl();
                 player().reset();
                 applyShortDramaMode();
