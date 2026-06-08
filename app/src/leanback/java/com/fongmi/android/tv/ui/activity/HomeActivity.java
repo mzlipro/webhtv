@@ -32,6 +32,7 @@ import com.fongmi.android.tv.bean.Class;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Func;
 import com.fongmi.android.tv.bean.History;
+import com.fongmi.android.tv.bean.HomeButton;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Style;
@@ -366,13 +367,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
 
     private void setFunc() {
         List<Func> items = new ArrayList<>();
-        if (!Setting.isHomeVodAutoLoad()) items.add(Func.create(R.string.home_vod));
-        if (LiveConfig.hasUrl()) items.add(Func.create(R.string.home_live));
-        items.add(Func.create(R.string.home_search));
-        items.add(Func.create(R.string.home_keep));
-        items.add(Func.create(R.string.home_push));
-        if (!Setting.isHomeHistory()) items.add(Func.create(R.string.home_history_button));
-        items.add(Func.create(R.string.home_setting));
+        for (HomeButton button : HomeButton.getVisibleButtons()) items.add(Func.create(button.getResId()));
         mFuncAdapter.setItems(items, new BaseDiffCallback<Func>());
     }
 
@@ -533,6 +528,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         else if (item.getResId() == R.string.home_live) LiveActivity.start(this);
         else if (item.getResId() == R.string.home_keep) KeepActivity.start(this);
         else if (item.getResId() == R.string.home_push) PushActivity.start(this);
+        else if (item.getResId() == R.string.home_cast) PushActivity.start(this);
         else if (item.getResId() == R.string.home_search) SearchActivity.start(this);
         else if (item.getResId() == R.string.home_history_button) HistoryActivity.start(this);
         else if (item.getResId() == R.string.home_setting) SettingActivity.start(this);
@@ -684,6 +680,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         if (mWeb != null) mWeb.onResume();
         syncHomeVodAutoLoadSetting();
         syncHomeHistorySetting();
+        setFunc();
     }
 
     @Override

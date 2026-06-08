@@ -480,6 +480,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.title.setOnLongClickListener(view -> onChange());
         mBinding.control.right.lock.setOnClickListener(view -> onLock());
         mBinding.control.right.rotate.setOnClickListener(view -> onRotate());
+        mBinding.control.right.pip.setOnClickListener(view -> onPiP());
         mBinding.control.danmaku.setOnClickListener(view -> onDanmakuShow());
         mBinding.control.action.text.setOnClickListener(this::onTrack);
         mBinding.control.action.audio.setOnClickListener(this::onTrack);
@@ -999,6 +1000,12 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         else enterFullscreen();
     }
 
+    private void onPiP() {
+        if (service() == null || !player().haveTrack(C.TRACK_TYPE_VIDEO)) return;
+        hideControl();
+        mPiP.enter(this, player().getVideoWidth(), player().getVideoHeight(), getScale(), true);
+    }
+
     private void onKeep() {
         Keep keep = Keep.find(getHistoryKey());
         Notify.show(keep != null ? R.string.keep_del : R.string.keep_add);
@@ -1350,6 +1357,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.danmaku.setVisibility(isLock() || !hasDanmakuControl() ? View.GONE : View.VISIBLE);
         mBinding.control.setting.setVisibility(mHistory == null || isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.right.rotate.setVisibility(isFullscreen() && !isLock() && !shortDrama ? View.VISIBLE : View.GONE);
+        mBinding.control.right.pip.setVisibility(canShowPiP(shortDrama) ? View.VISIBLE : View.GONE);
         mBinding.control.keep.setVisibility(mHistory == null ? View.GONE : View.VISIBLE);
         mBinding.control.parse.setVisibility(isFullscreen() && isUseParse() ? View.VISIBLE : View.GONE);
         mBinding.control.action.getRoot().setVisibility(isFullscreen() ? View.VISIBLE : View.GONE);
@@ -1370,6 +1378,10 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         updateDisplayStatus(System.currentTimeMillis());
         updateMiniProgress();
         touchControl();
+    }
+
+    private boolean canShowPiP(boolean shortDrama) {
+        return !shortDrama && !isFullscreen() && !isLock() && !player().isEmpty() && player().haveTrack(C.TRACK_TYPE_VIDEO) && !PiP.noPiP();
     }
 
     private void hideControl() {

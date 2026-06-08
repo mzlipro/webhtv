@@ -8,11 +8,13 @@ import android.view.View;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.R;
+import com.fongmi.android.tv.bean.HomeButton;
 import com.fongmi.android.tv.databinding.ActivitySettingPersonalBinding;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.DisplayDialog;
+import com.fongmi.android.tv.ui.dialog.HomeButtonDialog;
 
 public class SettingPersonalActivity extends BaseActivity {
 
@@ -42,6 +44,7 @@ public class SettingPersonalActivity extends BaseActivity {
     @Override
     protected void initEvent() {
         mBinding.homeVodAutoLoad.setOnClickListener(this::setHomeVodAutoLoad);
+        mBinding.homeButtons.setOnClickListener(this::onHomeButtons);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.homeHistory.setOnClickListener(this::setHomeHistory);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
@@ -51,6 +54,7 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setText() {
         mBinding.homeVodAutoLoadText.setText(getSwitch(Setting.isHomeVodAutoLoad()));
+        mBinding.homeButtonsText.setText(getString(R.string.home_buttons_selected, HomeButton.getButtons().size(), HomeButton.all().size()));
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.homeHistoryText.setText(getSwitch(Setting.isHomeHistory()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
@@ -83,6 +87,10 @@ public class SettingPersonalActivity extends BaseActivity {
     private void setHomeVodAutoLoad(View view) {
         Setting.putHomeVodAutoLoad(!Setting.isHomeVodAutoLoad());
         setText();
+    }
+
+    private void onHomeButtons(View view) {
+        HomeButtonDialog.show(this, this::setText);
     }
 
     private void setPlayBackToDetail(View view) {

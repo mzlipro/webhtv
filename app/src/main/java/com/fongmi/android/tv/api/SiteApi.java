@@ -187,7 +187,6 @@ public class SiteApi {
 
     @NonNull
     public static Result searchContent(@NonNull Site site, @NonNull String keyword, boolean quick, @NonNull String page) throws Exception {
-        SpiderDebug.log("search", "site=%s,keyword=%s,quick=%s,page=%s", site.getName(), keyword, quick, page);
         boolean hasPage = !page.equals("1");
         if (isSpider(site)) {
             String searchContent = hasPage ? site.spider().searchContent(keyword, quick, page) : site.spider().searchContent(keyword, quick);
@@ -210,6 +209,7 @@ public class SiteApi {
     }
 
     private static void logSearchResult(@NonNull Site site, @NonNull String page, @NonNull Result result, String raw) {
+        if (result.getList().isEmpty() && TextUtils.isEmpty(result.getMsg())) return;
         SpiderDebug.log("search", "site=%s,page=%s,pageCount=%s,items=%s,bytes=%s,msg=%s", site.getName(), page, result.getPageCount(), result.getList().size(), raw == null ? 0 : raw.length(), result.getMsg());
     }
 

@@ -94,6 +94,7 @@ import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.AudioUtil;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.PiP;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.Traffic;
@@ -195,6 +196,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private Clock inlineClock;
     private VodPlayerControlController inlineControlController;
     private InlineParseAdapter inlineParseAdapter;
+    private PiP inlinePiP;
     private final Runnable inlineHideControls = this::hideInlineControlsIfIdle;
     private final Runnable inlineKeySeekEnd = this::onInlineKeySeekEnd;
     private Result pendingInlineResult;
@@ -210,6 +212,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private boolean inlineKeySpeedChanging;
     private float inlineGestureSpeed = 1.0f;
     private boolean inlineStartPositionApplied;
+    private boolean inlinePiPEnteredFullscreen;
     private long inlineStartPosition = C.TIME_UNSET;
     private int selectedSeasonNumber = -1;
     private int playerIndex = -1;
@@ -385,11 +388,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         creatorAdapter.setItems(new ArrayList<>());
         relatedAdapter.setItems(new ArrayList<>());
         binding.tmdbStatus.setVisibility(View.GONE);
-        if (!TextUtils.isEmpty(getPicText())) {
-            ImgUtil.load(getNameText(), getPicText(), binding.poster);
-            ImgUtil.load(getNameText(), getPicText(), binding.backdropFill);
-            ImgUtil.load(getNameText(), getPicText(), binding.backdrop, false);
-        }
+        bindInitialArtwork();
     }
 
     private void initPage() {
@@ -433,11 +432,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         applyDetailTemplate();
         initFusionPlayer();
         binding.episodeEmpty.setText(R.string.detail_source_episode_empty);
-        if (!TextUtils.isEmpty(getPicText())) {
-            ImgUtil.load(getNameText(), getPicText(), binding.poster);
-            ImgUtil.load(getNameText(), getPicText(), binding.backdropFill);
-            ImgUtil.load(getNameText(), getPicText(), binding.backdrop, false);
-        }
+        bindInitialArtwork();
         episodeAdapter = new TmdbEpisodeAdapter(new TmdbEpisodeAdapter.Listener() {
             @Override
             public void onItemClick(Episode episode) {
@@ -516,6 +511,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 setInlineDanmakuIcon(show);
             }
         });
+        inlinePiP = new PiP();
         inlineClock = Clock.create();
         inlineClock.setCallback(this);
         inlineClock.start();
@@ -524,6 +520,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerPanel.setOnTouchListener(this::onInlineTouch);
         binding.playerPanel.setOnKeyListener(this::onInlinePanelKey);
         binding.playerPanel.setOnFocusChangeListener((view, focused) -> updatePlayerPanelFocus());
+        binding.playerPanel.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> inlinePiP.update(this, view));
         setupInlineControlFocus();
         setupInlineFocusNavigation();
         binding.playerPrev.setOnClickListener(view -> checkInlinePrev());
@@ -585,6 +582,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailControlView(R.id.danmaku, View.class).setOnClickListener(view -> toggleInlineDanmaku());
         detailControlView(R.id.lock, View.class).setOnClickListener(view -> toggleInlineLock());
         detailControlView(R.id.rotate, View.class).setOnClickListener(view -> rotateInlineFullscreen());
+        detailControlView(R.id.pip, View.class).setOnClickListener(view -> enterInlinePiP(true));
         detailActionView(R.id.player, View.class).setOnClickListener(view -> toggleInlinePlayer());
         detailActionView(R.id.player, View.class).setOnLongClickListener(view -> inlineControlController.showPlayerInfo());
         detailActionView(R.id.decode, View.class).setOnClickListener(view -> toggleInlineDecode());
@@ -1539,26 +1537,46 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         updateKeepState();
     }
 
+    private void bindInitialArtwork() {
+        ImgUtil.load(getNameText(), getPicText(), binding.poster);
+        bindBackdropImage(getNameText(), getBackdropText(), getPicText());
+    }
+
     private void bindBackdrop() {
-        String backdrop = matchedTmdbItem != null ? matchedTmdbItem.getBackdropUrl() : "";
-        if (TextUtils.isEmpty(backdrop) && matchedTmdbDetail != null) {
-            backdrop = tmdbService.image(tmdbConfig.getBackdropBase(), string(matchedTmdbDetail, "backdrop_path"));
-        }
-        if (TextUtils.isEmpty(backdrop)) backdrop = vod.getPic();
-        binding.hero.setVisibility(TextUtils.isEmpty(backdrop) ? View.GONE : View.VISIBLE);
-        if (!TextUtils.isEmpty(backdrop)) {
-            ImgUtil.load(vod.getName(), backdrop, binding.backdropFill);
-            ImgUtil.load(vod.getName(), backdrop, binding.backdrop, false);
-        }
+        bindBackdropImage(vod.getName(), tmdbBackdropUrl(), vod.getPic());
         episodeAdapter.setFallbackStillUrl(episodeFallbackStillUrl());
         ImgUtil.load(vod.getName(), vod.getPic(), binding.poster);
     }
 
-    private String episodeFallbackStillUrl() {
+    private void bindBackdropImage(String title, String backdrop, String fallback) {
+        boolean hasBackdrop = !TextUtils.isEmpty(backdrop) && !TextUtils.equals(backdrop, fallback);
+        String image = hasBackdrop ? backdrop : fallback;
+        binding.hero.setVisibility(TextUtils.isEmpty(image) ? View.GONE : View.VISIBLE);
+        if (TextUtils.isEmpty(image)) {
+            ImgUtil.clear(binding.backdropFill);
+            ImgUtil.clear(binding.backdrop);
+            return;
+        }
+        ImgUtil.load(title, image, binding.backdropFill);
+        if (hasBackdrop) {
+            binding.backdrop.setVisibility(View.VISIBLE);
+            ImgUtil.load(title, image, binding.backdrop, false);
+        } else {
+            binding.backdrop.setVisibility(View.GONE);
+            ImgUtil.clear(binding.backdrop);
+        }
+    }
+
+    private String tmdbBackdropUrl() {
         String backdrop = matchedTmdbItem != null ? matchedTmdbItem.getBackdropUrl() : "";
         if (TextUtils.isEmpty(backdrop) && matchedTmdbDetail != null) {
             backdrop = tmdbService.image(tmdbConfig.getBackdropBase(), string(matchedTmdbDetail, "backdrop_path"));
         }
+        return backdrop;
+    }
+
+    private String episodeFallbackStillUrl() {
+        String backdrop = tmdbBackdropUrl();
         if (!TextUtils.isEmpty(backdrop)) return backdrop;
         String poster = matchedTmdbItem != null ? matchedTmdbItem.getPosterUrl() : "";
         if (!TextUtils.isEmpty(poster)) return poster;
@@ -2841,6 +2859,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         setButtonEnabled(detailControlView(R.id.danmaku, View.class), hasPlayer && inlineControlController.hasDanmakuControl());
         setButtonEnabled(detailControlView(R.id.lock, View.class), hasPlayer);
         setButtonEnabled(detailControlView(R.id.rotate, View.class), hasPlayer);
+        setButtonEnabled(detailControlView(R.id.pip, View.class), canShowInlinePiP(hasPlayer, locked));
         setButtonEnabled(detailActionView(R.id.player, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.decode, View.class), hasPlayer);
         setButtonEnabled(detailActionView(R.id.speed, View.class), hasPlayer);
@@ -2864,6 +2883,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         detailControlView(R.id.fullscreen, View.class).setVisibility(locked ? View.GONE : View.VISIBLE);
         detailControlView(R.id.lock, View.class).setVisibility(inlineFullscreen ? View.VISIBLE : View.GONE);
         detailControlView(R.id.rotate, View.class).setVisibility(inlineFullscreen && !locked && !inlineShortDramaMode ? View.VISIBLE : View.GONE);
+        detailControlView(R.id.pip, View.class).setVisibility(canShowInlinePiP(hasPlayer, locked) ? View.VISIBLE : View.GONE);
         detailControlView(R.id.prev, View.class).setVisibility(!locked && hasPrev ? View.VISIBLE : View.GONE);
         detailControlView(R.id.next, View.class).setVisibility(!locked && hasNext ? View.VISIBLE : View.GONE);
         detailControlView(R.id.cast, View.class).setVisibility(!locked && hasInlineCast() ? View.VISIBLE : View.GONE);
@@ -2962,6 +2982,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private void setButtonEnabled(View button, boolean enabled) {
         button.setEnabled(enabled);
         button.setAlpha(enabled ? 1f : 0.36f);
+    }
+
+    private boolean canShowInlinePiP(boolean hasPlayer, boolean locked) {
+        return hasPlayer && !locked && !inlineFullscreen && player().haveTrack(C.TRACK_TYPE_VIDEO) && !PiP.noPiP();
     }
 
     private void setInlineFullscreenIcon() {
@@ -3715,6 +3739,22 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         else enterInlineFullscreen();
     }
 
+    private void enterInlinePiP(boolean force) {
+        if (!canEnterInlinePiP()) return;
+        if (!force && !PlayerSetting.isBackgroundPiP()) return;
+        boolean restoreFullscreen = !inlineFullscreen;
+        if (restoreFullscreen) enterInlineFullscreen();
+        hideInlineControls();
+        hideInlineGestureOverlays();
+        boolean entered = inlinePiP != null && inlinePiP.enter(this, player().getVideoWidth(), player().getVideoHeight(), getInlineScale(), force);
+        inlinePiPEnteredFullscreen = entered && restoreFullscreen;
+        if (!entered && restoreFullscreen && !isInPictureInPictureMode()) exitInlineFullscreen();
+    }
+
+    private boolean canEnterInlinePiP() {
+        return isInlinePlayerMode() && inlineStarted && service() != null && player() != null && !player().isEmpty() && player().haveTrack(C.TRACK_TYPE_VIDEO) && !PiP.noPiP();
+    }
+
     private void toggleInlineLock() {
         if (!Util.isMobile() || !inlineFullscreen) return;
         setLock(!isLock());
@@ -4141,6 +4181,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     protected void onPlayingChanged(boolean isPlaying) {
         if (isPlaying) hideInlinePauseInfo();
         else if (isPaused()) showInlinePauseInfo();
+        if (inlinePiP != null) inlinePiP.update(this, isPlaying);
         updateInlineButtons(isPlaying);
         updateInlineDisplayPanel();
     }
@@ -4178,6 +4219,27 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         scheduleMobileInlineSideControlMarginUpdate();
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        enterInlinePiP(false);
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, @NonNull Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        if (!isInlinePlayerMode()) return;
+        if (isInPictureInPictureMode) {
+            hideInlineControls();
+            hideInlineGestureOverlays();
+            return;
+        }
+        if (inlinePiPEnteredFullscreen && inlineFullscreen) exitInlineFullscreen();
+        inlinePiPEnteredFullscreen = false;
+        updateInlineButtons(service() != null && player() != null && !player().isEmpty() && player().isPlaying());
+        updateInlineDisplayPanel();
     }
 
     @Override
@@ -4930,7 +4992,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 buildSubtitle(),
                 displayOverview(),
                 TextUtils.isEmpty(matchedTmdbItem.getPosterUrl()) ? vod.getPic() : matchedTmdbItem.getPosterUrl(),
-                TextUtils.isEmpty(matchedTmdbItem.getBackdropUrl()) ? vod.getPic() : matchedTmdbItem.getBackdropUrl(),
+                matchedTmdbItem.getBackdropUrl(),
                 matchedTmdbItem.getCredit());
     }
 
@@ -5220,6 +5282,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private String getPicText() {
         return Objects.toString(getIntent().getStringExtra("pic"), "");
+    }
+
+    private String getBackdropText() {
+        return Objects.toString(getIntent().getStringExtra("tmdb_backdrop"), "");
     }
 
     private String getMarkText() {

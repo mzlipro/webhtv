@@ -71,16 +71,21 @@ public class PiP {
         }
     }
 
-    public void enter(Activity activity, int width, int height, int scale) {
+    public boolean enter(Activity activity, int width, int height, int scale) {
+        return enter(activity, width, height, scale, false);
+    }
+
+    public boolean enter(Activity activity, int width, int height, int scale, boolean force) {
         try {
-            if (noPiP() || activity.isInPictureInPictureMode() || !PlayerSetting.isBackgroundPiP()) return;
+            if (noPiP() || activity.isInPictureInPictureMode() || (!force && !PlayerSetting.isBackgroundPiP())) return false;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setSeamlessResizeEnabled(true);
             if (scale == 1) builder.setAspectRatio(new Rational(16, 9));
             else if (scale == 2) builder.setAspectRatio(new Rational(4, 3));
             else builder.setAspectRatio(getRational(width, height));
-            activity.enterPictureInPictureMode(builder.build());
+            return activity.enterPictureInPictureMode(builder.build());
         } catch (Exception e) {
             e.printStackTrace();
+            return false;
         }
     }
 

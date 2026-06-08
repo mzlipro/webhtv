@@ -131,7 +131,8 @@
             android:name=".ui.activity.TmdbDetailActivity"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|uiMode|orientation"
             android:parentActivityName=".ui.activity.HomeActivity"
-            android:screenOrientation="fullUser" />
+            android:screenOrientation="fullUser"
+            android:supportsPictureInPicture="true" />
 
         <activity
             android:name=".ui.activity.TmdbPersonActivity"
