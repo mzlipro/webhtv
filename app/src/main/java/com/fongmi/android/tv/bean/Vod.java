@@ -84,6 +84,7 @@ public class Vod implements Parcelable, Diffable<Vod> {
     @ElementList(entry = "dd", required = false, inline = true)
     private List<Flag> vodFlags;
     private Site site;
+    private transient String cachedName;
 
     public Vod() {
     }
@@ -132,11 +133,13 @@ public class Vod implements Parcelable, Diffable<Vod> {
     }
 
     public String getName() {
-        return TextUtils.isEmpty(vodName) ? "" : Html.fromHtml(vodName, Html.FROM_HTML_MODE_LEGACY).toString().trim();
+        if (cachedName == null) cachedName = TextUtils.isEmpty(vodName) ? "" : Html.fromHtml(vodName, Html.FROM_HTML_MODE_LEGACY).toString().trim();
+        return cachedName;
     }
 
     public void setName(String vodName) {
         this.vodName = vodName;
+        this.cachedName = null;
     }
 
     public String getTypeName() {
@@ -320,6 +323,7 @@ public class Vod implements Parcelable, Diffable<Vod> {
         if (vodRemarks != null) this.vodRemarks = Sniffer.CLICKER.matcher(vodRemarks).find() ? vodRemarks : Trans.s2t(vodRemarks);
         if (vodContent != null) this.vodContent = Sniffer.CLICKER.matcher(vodContent).find() ? vodContent : Trans.s2t(vodContent);
         if (vodDirector != null) this.vodDirector = Sniffer.CLICKER.matcher(vodDirector).find() ? vodDirector : Trans.s2t(vodDirector);
+        this.cachedName = null;
         return this;
     }
 

@@ -68,6 +68,8 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        setIntent(intent);
+        if (Intent.ACTION_SEARCH.equals(intent.getAction()) && !isVodReady()) return;
         checkAction(intent);
     }
 
@@ -103,6 +105,10 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         }
     }
 
+    private boolean isVodReady() {
+        return !VodConfig.get().getSites().isEmpty();
+    }
+
     private void checkType(Intent intent) {
         if ("text/plain".equals(intent.getType()) || UrlUtil.path(intent.getData()).endsWith(".m3u")) {
             loadLive("file:/" + FileChooser.getPathFromUri(intent.getData()));
@@ -126,6 +132,10 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
 
     private void initConfig() {
         VodConfig.get().init().load(getCallback());
+        App.post(this::initSecondaryConfig, 6000);
+    }
+
+    private void initSecondaryConfig() {
         LiveConfig.get().init().load();
         WallConfig.get().init();
     }

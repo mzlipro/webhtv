@@ -15,6 +15,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,6 +31,11 @@ public class JarLoader {
     private final ConcurrentHashMap<String, Spider> spiders;
     private final ConcurrentHashMap<String, Object> locks;
     private volatile String recent;
+
+    private static boolean isMissingOptionalClass(Throwable e) {
+        Throwable cause = e instanceof InvocationTargetException ? ((InvocationTargetException) e).getTargetException() : e;
+        return cause instanceof ClassNotFoundException || cause instanceof NoClassDefFoundError;
+    }
 
     public JarLoader() {
         loaders = new ConcurrentHashMap<>();
@@ -67,7 +73,7 @@ public class JarLoader {
             Method method = clz.getMethod("init", Context.class);
             method.invoke(clz, App.get());
         } catch (Throwable e) {
-            e.printStackTrace();
+            if (!isMissingOptionalClass(e)) e.printStackTrace();
         }
     }
 
@@ -77,7 +83,7 @@ public class JarLoader {
             Method method = clz.getMethod("proxy", Map.class);
             methods.put(key, method);
         } catch (Throwable e) {
-            e.printStackTrace();
+            if (!isMissingOptionalClass(e)) e.printStackTrace();
         }
     }
 
@@ -125,7 +131,7 @@ public class JarLoader {
                 spider.init(App.get(), ext);
                 return spider;
             } catch (Throwable e) {
-                e.printStackTrace();
+                if (!isMissingOptionalClass(e)) e.printStackTrace();
                 return new SpiderNull();
             }
         });

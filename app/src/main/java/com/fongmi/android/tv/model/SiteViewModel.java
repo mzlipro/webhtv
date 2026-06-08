@@ -121,7 +121,6 @@ public class SiteViewModel extends ViewModel {
                         if (searchEpoch.get() != epoch) return;
                         if (error instanceof CancellationException) return;
                         SiteHealthStore.recordSearch(site, false, 0, System.currentTimeMillis() - start, error.getMessage());
-                        error.printStackTrace();
                     }
             ), MoreExecutors.directExecutor());
         });
@@ -150,7 +149,6 @@ public class SiteViewModel extends ViewModel {
                     if (onError != null) onError.accept(error);
                     if (error instanceof ExtractException) liveData.postValue(Result.error(error.getMessage()));
                     else liveData.postValue(Result.empty());
-                    error.printStackTrace();
                 }
         ), MoreExecutors.directExecutor());
     }

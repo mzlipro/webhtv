@@ -92,7 +92,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         Notify.createChannel();
         ProxySetting.apply();
         registerActivityLifecycleCallbacks(this);
-        post(this::startBackgroundServices, 1200);
+        post(this::startBackgroundServices, 6000);
     }
 
     private void startBackgroundServices() {

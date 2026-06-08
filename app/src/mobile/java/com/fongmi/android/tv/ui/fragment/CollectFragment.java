@@ -17,8 +17,10 @@ import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewbinding.ViewBinding;
 
+import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Collect;
@@ -43,12 +45,40 @@ import java.util.List;
 
 public class CollectFragment extends BaseFragment implements MenuProvider, CollectAdapter.OnClickListener, SearchAdapter.OnClickListener, CustomScroller.Callback {
 
+    private static final long SEARCH_UPDATE_DELAY = 80;
+    private static final long SEARCH_SCROLL_DELAY = 180;
+    private static final long SEARCH_AFTER_SCROLL_DELAY = 1500;
+    private static final long SEARCH_IMAGE_DELAY = 350;
+    private static final int SEARCH_BATCH_SIZE = 24;
+    private static final int SEARCH_IMAGE_BATCH_SIZE = 1;
+    private static final int COLLECT_BATCH_SIZE = 8;
+
     private FragmentCollectBinding mBinding;
     private CollectAdapter mCollectAdapter;
     private SearchAdapter mSearchAdapter;
     private CustomScroller mScroller;
     private SiteViewModel mViewModel;
     private List<Site> mSites;
+    private final List<Collect> pendingCollectItems;
+    private final List<Vod> pendingSearchItems;
+    private final List<Vod> pendingActiveSearchItems;
+    private final Runnable flushSearchUpdates;
+    private final Runnable restoreSearchImages;
+    private String pendingActiveSiteKey;
+    private int pendingImageStart;
+    private int pendingImageEnd;
+    private boolean searchScrolling;
+
+    public CollectFragment() {
+        pendingCollectItems = new ArrayList<>();
+        pendingSearchItems = new ArrayList<>();
+        pendingActiveSearchItems = new ArrayList<>();
+        flushSearchUpdates = this::flushSearchUpdates;
+        restoreSearchImages = this::restoreSearchImages;
+        pendingActiveSiteKey = "";
+        pendingImageStart = RecyclerView.NO_POSITION;
+        pendingImageEnd = RecyclerView.NO_POSITION;
+    }
 
     public static CollectFragment newInstance(String keyword) {
         return newInstance(keyword, "");
@@ -118,8 +148,62 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.recycler.setItemAnimator(null);
         mBinding.recycler.setHasFixedSize(true);
         mBinding.recycler.addOnScrollListener(mScroller);
+        mBinding.recycler.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                boolean scrolling = newState != RecyclerView.SCROLL_STATE_IDLE;
+                if (searchScrolling == scrolling) return;
+                searchScrolling = scrolling;
+                if (scrolling) {
+                    if (mSearchAdapter != null) mSearchAdapter.setLoadImages(false);
+                    App.removeCallbacks(flushSearchUpdates, restoreSearchImages);
+                } else {
+                    scheduleVisibleSearchImages(SEARCH_AFTER_SCROLL_DELAY);
+                    App.post(flushSearchUpdates, SEARCH_AFTER_SCROLL_DELAY);
+                }
+            }
+        });
         mBinding.recycler.setAdapter(mSearchAdapter = new SearchAdapter(this));
         updateSpanCount();
+    }
+
+    private void scheduleVisibleSearchImages(long delayMillis) {
+        if (mBinding == null || mSearchAdapter == null || searchScrolling) return;
+        RecyclerView.LayoutManager manager = mBinding.recycler.getLayoutManager();
+        if (!(manager instanceof LinearLayoutManager layoutManager)) return;
+        int first = layoutManager.findFirstVisibleItemPosition();
+        int last = layoutManager.findLastVisibleItemPosition();
+        if (first == RecyclerView.NO_POSITION || last < first) return;
+        pendingImageStart = first;
+        pendingImageEnd = last;
+        App.post(restoreSearchImages, delayMillis);
+    }
+
+    private void restoreSearchImages() {
+        if (mBinding == null || mSearchAdapter == null || searchScrolling) return;
+        if (pendingImageStart == RecyclerView.NO_POSITION || pendingImageEnd < pendingImageStart) return;
+        int count = Math.min(SEARCH_IMAGE_BATCH_SIZE, pendingImageEnd - pendingImageStart + 1);
+        mSearchAdapter.setLoadImages(true);
+        for (int i = 0; i < count; i++) {
+            RecyclerView.ViewHolder holder = mBinding.recycler.findViewHolderForAdapterPosition(pendingImageStart + i);
+            if (holder != null) mSearchAdapter.loadImage(holder);
+        }
+        pendingImageStart += count;
+        if (pendingImageStart <= pendingImageEnd) App.post(restoreSearchImages, SEARCH_IMAGE_DELAY);
+    }
+
+    private void addSearchItems(List<Vod> items) {
+        if (items.isEmpty()) return;
+        if (mSearchAdapter.isGridMode()) mSearchAdapter.setLoadImages(false);
+        mSearchAdapter.addAll(items, () -> scheduleVisibleSearchImages(SEARCH_AFTER_SCROLL_DELAY));
+    }
+
+    private void setSearchItems(List<Vod> items, Runnable runnable) {
+        if (mSearchAdapter.isGridMode()) mSearchAdapter.setLoadImages(false);
+        mSearchAdapter.setItems(items, () -> {
+            runnable.run();
+            scheduleVisibleSearchImages(SEARCH_AFTER_SCROLL_DELAY);
+        });
     }
 
     private void setViewModel() {
@@ -244,9 +328,48 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private void setCollect(Result result) {
         if (result == null || result.getList().isEmpty()) return;
-        if (mCollectAdapter.getPosition() == 0) mSearchAdapter.addAll(result.getList());
-        mCollectAdapter.add(Collect.create(result.getList()));
         mCollectAdapter.add(result.getList());
+        pendingCollectItems.add(Collect.create(result.getList()));
+        if (mCollectAdapter.getPosition() == 0) pendingSearchItems.addAll(result.getList());
+        scheduleSearchFlush();
+    }
+
+    private void scheduleSearchFlush() {
+        App.post(flushSearchUpdates, searchScrolling ? SEARCH_SCROLL_DELAY : SEARCH_UPDATE_DELAY);
+    }
+
+    private void flushSearchUpdates() {
+        if (mBinding == null) return;
+        if (searchScrolling && mSearchAdapter.getItemCount() > 0) {
+            App.post(flushSearchUpdates, SEARCH_SCROLL_DELAY);
+            return;
+        }
+        if (!pendingCollectItems.isEmpty()) {
+            int count = Math.min(COLLECT_BATCH_SIZE, pendingCollectItems.size());
+            List<Collect> items = new ArrayList<>(pendingCollectItems.subList(0, count));
+            pendingCollectItems.subList(0, count).clear();
+            mCollectAdapter.addAll(items);
+        }
+        if (!pendingSearchItems.isEmpty()) {
+            int count = Math.min(SEARCH_BATCH_SIZE, pendingSearchItems.size());
+            List<Vod> items = new ArrayList<>(pendingSearchItems.subList(0, count));
+            pendingSearchItems.subList(0, count).clear();
+            if (mCollectAdapter.getPosition() == 0) addSearchItems(items);
+        }
+        if (!pendingActiveSearchItems.isEmpty()) {
+            Collect activated = mCollectAdapter.getActivated();
+            boolean same = activated != null && activated.getSite().getKey().equals(pendingActiveSiteKey);
+            if (same) {
+                int count = Math.min(SEARCH_BATCH_SIZE, pendingActiveSearchItems.size());
+                List<Vod> items = new ArrayList<>(pendingActiveSearchItems.subList(0, count));
+                pendingActiveSearchItems.subList(0, count).clear();
+                addSearchItems(items);
+            } else {
+                pendingActiveSearchItems.clear();
+                pendingActiveSiteKey = "";
+            }
+        }
+        if (!pendingCollectItems.isEmpty() || !pendingSearchItems.isEmpty() || !pendingActiveSearchItems.isEmpty()) scheduleSearchFlush();
     }
 
     private void setSearch(Result result) {
@@ -254,12 +377,27 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mScroller.endLoading(result);
         boolean same = !result.getList().isEmpty() && mCollectAdapter.getActivated().getSite().equals(result.getVod().getSite());
         if (same) mCollectAdapter.getActivated().getList().addAll(result.getList());
-        if (same) mSearchAdapter.addAll(result.getList());
+        if (!same) return;
+        if (searchScrolling && mSearchAdapter.getItemCount() > 0) {
+            addPendingActiveSearchItems(result.getVod().getSite().getKey(), result.getList());
+            return;
+        }
+        addSearchItems(result.getList());
+    }
+
+    private void addPendingActiveSearchItems(String siteKey, List<Vod> items) {
+        if (!pendingActiveSiteKey.equals(siteKey)) {
+            pendingActiveSearchItems.clear();
+            pendingActiveSiteKey = siteKey;
+        }
+        pendingActiveSearchItems.addAll(items);
+        scheduleSearchFlush();
     }
 
     @Override
     public void onItemClick(int position, Collect item) {
-        mSearchAdapter.setItems(item.getList(), () -> mBinding.recycler.scrollToPosition(0));
+        flushSearchUpdates();
+        setSearchItems(item.getList(), () -> mBinding.recycler.scrollToPosition(0));
         mCollectAdapter.setSelected(position);
         mScroller.setPage(item.getPage());
     }
@@ -307,8 +445,17 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        App.removeCallbacks(flushSearchUpdates, restoreSearchImages);
+        pendingCollectItems.clear();
+        pendingSearchItems.clear();
+        pendingActiveSearchItems.clear();
+        pendingActiveSiteKey = "";
+        pendingImageStart = RecyclerView.NO_POSITION;
+        pendingImageEnd = RecyclerView.NO_POSITION;
+        searchScrolling = false;
         mViewModel.stopSearch();
         SiteHealthStore.flush();
         requireActivity().removeMenuProvider(this);
+        mBinding = null;
     }
 }
