@@ -1,19 +1,25 @@
 package com.fongmi.android.tv.ui.fragment;
 
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.PopupWindow;
+import android.widget.ScrollView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.LinearLayoutCompat;
-import androidx.appcompat.widget.PopupMenu;
 import androidx.core.view.MenuProvider;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.ViewModelProvider;
@@ -41,6 +47,7 @@ import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.custom.CustomScroller;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.google.android.material.textview.MaterialTextView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +67,8 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private static final int SEARCH_IMAGE_BATCH_SIZE = 1;
     private static final int SEARCH_ITEM_CACHE_SIZE = 24;
     private static final int COLLECT_BATCH_SIZE = 8;
+    private static final int GROUP_POPUP_ITEM_HEIGHT = 44;
+    private static final int GROUP_POPUP_MAX_ITEMS = 8;
 
     private FragmentCollectBinding mBinding;
     private CollectAdapter mCollectAdapter;
@@ -70,10 +79,12 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private List<String> mGroups;
     private final List<Collect> mAllCollectItems;
     private final List<Collect> pendingCollectItems;
+    private final List<Vod> pendingResetSearchItems;
     private final List<Vod> pendingSearchItems;
     private final List<Vod> pendingActiveSearchItems;
     private final Runnable flushSearchUpdates;
     private final Runnable restoreSearchImages;
+    private PopupWindow groupPopup;
     private String pendingActiveSiteKey;
     private String mFilterGroup;
     private int pendingImageStart;
@@ -87,6 +98,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     public CollectFragment() {
         mAllCollectItems = new ArrayList<>();
         pendingCollectItems = new ArrayList<>();
+        pendingResetSearchItems = new ArrayList<>();
         pendingSearchItems = new ArrayList<>();
         pendingActiveSearchItems = new ArrayList<>();
         flushSearchUpdates = this::flushSearchUpdates;
@@ -262,10 +274,26 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     }
 
     private void setSearchItems(List<Vod> items, Runnable runnable) {
+        App.removeCallbacks(restoreSearchImages);
+        pendingResetSearchItems.clear();
+        pendingImageStart = RecyclerView.NO_POSITION;
+        pendingImageEnd = RecyclerView.NO_POSITION;
+        imageRestoreScheduled = false;
         resetLoadedSearchImages();
         if (mSearchAdapter.isGridMode()) mSearchAdapter.setLoadImages(false);
+        List<Vod> source = items == null ? List.of() : items;
+        if (source.size() > getSearchResetBatchSize()) {
+            App.removeCallbacks(flushSearchUpdates);
+            searchFlushScheduled = false;
+            mSearchAdapter.clear(() -> {
+                if (runnable != null) runnable.run();
+                pendingResetSearchItems.addAll(source);
+                scheduleSearchFlush(0);
+            });
+            return;
+        }
         mSearchAdapter.setItems(items, () -> {
-            runnable.run();
+            if (runnable != null) runnable.run();
             scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY);
         });
     }
@@ -405,7 +433,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         if (result == null || result.getList().isEmpty()) return;
         Collect collect = addMasterCollect(result.getList());
         if (!matchFilter(collect.getSite())) return;
-        mCollectAdapter.add(result.getList());
+        addVisibleCollectItems(result.getList());
         if (!hasCollect(mCollectAdapter.getItems(), collect) && !hasCollect(pendingCollectItems, collect)) pendingCollectItems.add(collect);
         if (mCollectAdapter.getPosition() == 0) pendingSearchItems.addAll(result.getList());
         scheduleSearchFlush();
@@ -421,6 +449,12 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         }
         collect.getList().addAll(items);
         return collect;
+    }
+
+    private void addVisibleCollectItems(List<Vod> items) {
+        if (mCollectAdapter.getItemCount() == 0) return;
+        if (!mAllCollectItems.isEmpty() && mCollectAdapter.getItem(0) == mAllCollectItems.get(0)) return;
+        mCollectAdapter.add(items);
     }
 
     private boolean hasCollect(List<Collect> items, Collect collect) {
@@ -459,6 +493,12 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
             pendingCollectItems.subList(0, count).clear();
             mCollectAdapter.addAll(items);
         }
+        if (!pendingResetSearchItems.isEmpty()) {
+            int count = Math.min(getSearchResetBatchSize(), pendingResetSearchItems.size());
+            List<Vod> items = new ArrayList<>(pendingResetSearchItems.subList(0, count));
+            pendingResetSearchItems.subList(0, count).clear();
+            addSearchItems(items);
+        }
         if (!pendingSearchItems.isEmpty()) {
             int count = Math.min(getSearchBatchSize(), pendingSearchItems.size());
             List<Vod> items = new ArrayList<>(pendingSearchItems.subList(0, count));
@@ -478,11 +518,15 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
                 pendingActiveSiteKey = "";
             }
         }
-        if (!pendingCollectItems.isEmpty() || !pendingSearchItems.isEmpty() || !pendingActiveSearchItems.isEmpty()) scheduleSearchFlush();
+        if (!pendingCollectItems.isEmpty() || !pendingResetSearchItems.isEmpty() || !pendingSearchItems.isEmpty() || !pendingActiveSearchItems.isEmpty()) scheduleSearchFlush();
     }
 
     private int getSearchBatchSize() {
         return mSearchAdapter != null && mSearchAdapter.isGridMode() ? SEARCH_GRID_BATCH_SIZE : SEARCH_LIST_BATCH_SIZE;
+    }
+
+    private int getSearchResetBatchSize() {
+        return getSearchBatchSize() * 4;
     }
 
     private void setSearch(Result result) {
@@ -570,11 +614,73 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private void onGroupFilter() {
         if (!canFilterGroup()) return;
         View anchor = mBinding.toolbar.findViewById(R.id.action_group);
-        PopupMenu popup = new PopupMenu(requireContext(), anchor == null ? mBinding.toolbar : anchor);
-        popup.getMenu().add(0, MENU_GROUP_ALL, 0, R.string.search_scope_all);
-        for (int i = 0; i < mGroups.size(); i++) popup.getMenu().add(1, MENU_GROUP_OFFSET + i, i + 1, mGroups.get(i));
-        popup.setOnMenuItemClickListener(item -> onGroupFilterSelected(item.getItemId()));
-        popup.show();
+        showGroupPopup(anchor == null ? mBinding.toolbar : anchor);
+    }
+
+    private void showGroupPopup(View anchor) {
+        if (groupPopup != null) groupPopup.dismiss();
+        int width = getGroupPopupWidth();
+        int height = getGroupPopupHeight();
+        ScrollView scroll = new ScrollView(requireContext());
+        LinearLayoutCompat content = new LinearLayoutCompat(requireContext());
+        content.setOrientation(LinearLayoutCompat.VERTICAL);
+        content.setPadding(0, ResUtil.dp2px(6), 0, ResUtil.dp2px(6));
+        scroll.setBackground(getGroupPopupBackground());
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.addView(content, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addGroupPopupItem(content, getString(R.string.search_scope_all), MENU_GROUP_ALL);
+        for (int i = 0; i < mGroups.size(); i++) addGroupPopupItem(content, mGroups.get(i), MENU_GROUP_OFFSET + i);
+        groupPopup = new PopupWindow(scroll, width, height, true);
+        groupPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        groupPopup.setOutsideTouchable(true);
+        groupPopup.setElevation(ResUtil.dp2px(6));
+        groupPopup.showAsDropDown(anchor, anchor.getWidth() - width, 0);
+    }
+
+    private GradientDrawable getGroupPopupBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.WHITE);
+        drawable.setCornerRadius(ResUtil.dp2px(6));
+        return drawable;
+    }
+
+    private int getGroupPopupWidth() {
+        int width = ResUtil.getTextWidth(getString(R.string.search_scope_all), 16);
+        for (String group : mGroups) width = Math.max(width, ResUtil.getTextWidth(group, 16));
+        int contentWidth = width + ResUtil.dp2px(36);
+        int maxWidth = ResUtil.getScreenWidth(requireContext()) - ResUtil.dp2px(32);
+        return Math.min(contentWidth, maxWidth);
+    }
+
+    private int getGroupPopupHeight() {
+        int itemHeight = ResUtil.dp2px(GROUP_POPUP_ITEM_HEIGHT);
+        int padding = ResUtil.dp2px(12);
+        int contentHeight = (mGroups.size() + 1) * itemHeight + padding;
+        int maxHeight = Math.min(ResUtil.getScreenHeight(requireContext()) - mBinding.toolbar.getHeight() - ResUtil.dp2px(32), GROUP_POPUP_MAX_ITEMS * itemHeight + padding);
+        return Math.min(contentHeight, Math.max(itemHeight + padding, maxHeight));
+    }
+
+    private void addGroupPopupItem(LinearLayoutCompat content, String text, int itemId) {
+        MaterialTextView view = new MaterialTextView(requireContext());
+        view.setText(text);
+        view.setSingleLine(true);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setIncludeFontPadding(false);
+        view.setTextColor(0xFF202124);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        view.setPadding(ResUtil.dp2px(18), 0, ResUtil.dp2px(18), 0);
+        view.setBackgroundResource(getSelectableItemBackground());
+        view.setOnClickListener(v -> {
+            if (groupPopup != null) groupPopup.dismiss();
+            onGroupFilterSelected(itemId);
+        });
+        content.addView(view, new LinearLayoutCompat.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ResUtil.dp2px(GROUP_POPUP_ITEM_HEIGHT)));
+    }
+
+    private int getSelectableItemBackground() {
+        TypedValue value = new TypedValue();
+        requireContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, value, true);
+        return value.resourceId;
     }
 
     private boolean onGroupFilterSelected(int itemId) {
@@ -611,13 +717,14 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private List<Collect> getFilteredCollectItems(String activeSiteKey) {
         List<Collect> items = new ArrayList<>();
-        Collect all = Collect.all();
+        boolean allGroup = TextUtils.isEmpty(mFilterGroup);
+        Collect all = allGroup && !mAllCollectItems.isEmpty() ? mAllCollectItems.get(0) : Collect.all();
         all.setSelected(false);
         items.add(all);
         for (int i = 1; i < mAllCollectItems.size(); i++) {
             Collect item = mAllCollectItems.get(i);
             if (!matchFilter(item.getSite())) continue;
-            all.getList().addAll(item.getList());
+            if (!allGroup) all.getList().addAll(item.getList());
             item.setSelected(item.getSite().getKey().equals(activeSiteKey));
             items.add(item);
         }
@@ -632,6 +739,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private void clearPendingSearchItems() {
         pendingCollectItems.clear();
+        pendingResetSearchItems.clear();
         pendingSearchItems.clear();
         pendingActiveSearchItems.clear();
         pendingActiveSiteKey = "";
@@ -647,7 +755,10 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     public void onDestroyView() {
         super.onDestroyView();
         App.removeCallbacks(flushSearchUpdates, restoreSearchImages);
+        if (groupPopup != null) groupPopup.dismiss();
+        groupPopup = null;
         pendingCollectItems.clear();
+        pendingResetSearchItems.clear();
         pendingSearchItems.clear();
         pendingActiveSearchItems.clear();
         mAllCollectItems.clear();
