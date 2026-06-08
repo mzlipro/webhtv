@@ -1102,6 +1102,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private void showControl(View view) {
+        hideInfo();
         mBinding.control.getRoot().setVisibility(View.VISIBLE);
         view.requestFocus();
         setR1Callback();
@@ -1429,7 +1430,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         if (isPlaying) {
             hideCenter();
         } else if (isPaused()) {
-            if (isFullscreen()) showInfo();
+            if (isFullscreen() && isGone(mBinding.control.getRoot())) showInfo();
             else hideInfo();
         }
     }

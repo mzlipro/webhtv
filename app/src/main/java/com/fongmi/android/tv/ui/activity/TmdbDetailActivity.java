@@ -718,6 +718,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void showInlinePauseInfo() {
         if (!isInlinePlayerMode() || service() == null || player() == null || player().isEmpty()) return;
+        if (Util.isMobile()) {
+            hideInlinePauseInfo();
+            return;
+        }
         inlinePauseInfo = true;
         binding.gestureAction.setImageResource(R.drawable.ic_widget_play);
         binding.gestureTime.setText(player().getPositionTime(0));

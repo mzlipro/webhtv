@@ -9,6 +9,8 @@ import android.view.inputmethod.EditorInfo;
 import androidx.appcompat.widget.LinearLayoutCompat;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.R;
@@ -38,9 +40,11 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
     private DialogSiteBinding binding;
     private SiteListener listener;
     private SiteAdapter adapter;
+    private SpaceItemDecoration itemDecoration;
     private List<String> groups;
     private boolean search;
     private boolean change;
+    private int columnCount = 1;
 
     public static SiteDialog create() {
         return new SiteDialog();
@@ -77,11 +81,11 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         groups = getGroups();
         binding.recycler.setAdapter(adapter);
         adapter.search(search).change(change);
+        setColumnCount(1);
         setGroupView();
         filter();
         binding.recycler.setItemAnimator(null);
         binding.recycler.setHasFixedSize(true);
-        binding.recycler.addItemDecoration(new SpaceItemDecoration(1, 8));
         binding.recycler.post(() -> binding.recycler.scrollToPosition(adapter.getSelectedPosition()));
     }
 
@@ -97,7 +101,22 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
                 filter();
             }
         });
-        binding.search.setOnClickListener(view -> Util.hideKeyboard(binding.keyword));
+        binding.search.setOnClickListener(this::onColumnToggle);
+    }
+
+    private void onColumnToggle(View view) {
+        Util.hideKeyboard(binding.keyword);
+        setColumnCount(columnCount == 1 ? 2 : 1);
+    }
+
+    private void setColumnCount(int count) {
+        columnCount = count;
+        if (itemDecoration != null) binding.recycler.removeItemDecoration(itemDecoration);
+        itemDecoration = new SpaceItemDecoration(columnCount, 8);
+        binding.recycler.addItemDecoration(itemDecoration);
+        binding.recycler.setLayoutManager(columnCount == 1 ? new LinearLayoutManager(requireContext()) : new GridLayoutManager(requireContext(), columnCount));
+        binding.search.setImageResource(columnCount == 1 ? R.drawable.ic_site_single_column : R.drawable.ic_site_double_column);
+        if (adapter != null) adapter.column(columnCount);
     }
 
     private List<String> getGroups() {

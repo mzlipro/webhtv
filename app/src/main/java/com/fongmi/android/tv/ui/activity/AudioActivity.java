@@ -935,7 +935,7 @@ public class AudioActivity extends PlaybackActivity {
     @Override
     protected void onBackInvoked() {
         if (binding.playlistPanel.getVisibility() == View.VISIBLE) showPlaylist(false);
-        else moveTaskToBack(true);
+        else stopAndFinish();
     }
 
     @Override

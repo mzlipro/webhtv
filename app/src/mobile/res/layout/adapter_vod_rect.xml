@@ -56,16 +56,19 @@
     <com.google.android.material.textview.MaterialTextView
         android:id="@+id/name"
         android:layout_width="match_parent"
-        android:layout_height="24dp"
+        android:layout_height="wrap_content"
         android:layout_below="@+id/image"
         android:layout_alignStart="@+id/image"
         android:layout_alignEnd="@+id/image"
         android:background="@drawable/shape_vod_name"
         android:ellipsize="end"
         android:gravity="center"
-        android:includeFontPadding="false"
+        android:maxLines="1"
         android:textColor="@color/white"
-        android:textSize="14sp"
+        app:autoSizeMaxTextSize="14sp"
+        app:autoSizeMinTextSize="12sp"
+        app:autoSizeStepGranularity="1sp"
+        app:autoSizeTextType="uniform"
         tools:text="蜘蛛人" />
 
 </RelativeLayout>

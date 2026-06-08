@@ -28,6 +28,7 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
     private String group;
     private boolean search;
     private boolean change;
+    private int column = 1;
 
     public SiteAdapter(OnClickListener listener) {
         this.listener = listener;
@@ -57,6 +58,11 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
     public SiteAdapter change(boolean change) {
         this.change = change;
         return this;
+    }
+
+    public void column(int column) {
+        this.column = Math.max(1, column);
+        notifyDataSetChanged();
     }
 
     private void addAll() {
@@ -107,6 +113,7 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Site item = mItems.get(position);
         boolean on = !search || change;
+        boolean singleColumn = column == 1;
         holder.binding.text.setText(item.getName());
         holder.binding.health.setBackgroundTintList(ColorStateList.valueOf(SiteHealthStore.getColor(item)));
         holder.binding.text.setEnabled(on);
@@ -114,8 +121,8 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
         holder.binding.text.setSelected(on && item.isSelected());
         holder.binding.search.setImageResource(getSearchIcon(item));
         holder.binding.change.setImageResource(getChangeIcon(item));
-        holder.binding.search.setVisibility(search ? View.VISIBLE : View.GONE);
-        holder.binding.change.setVisibility(change ? View.VISIBLE : View.GONE);
+        holder.binding.search.setVisibility(search && singleColumn ? View.VISIBLE : View.GONE);
+        holder.binding.change.setVisibility(change && singleColumn ? View.VISIBLE : View.GONE);
         holder.binding.text.setOnClickListener(v -> listener.onTextClick(item));
         holder.binding.search.setOnClickListener(v -> listener.onSearchClick(position, item));
         holder.binding.change.setOnClickListener(v -> listener.onChangeClick(position, item));
