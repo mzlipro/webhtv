@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.ui.adapter;
 
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,25 +15,93 @@ import com.fongmi.android.tv.databinding.AdapterSearchGridBinding;
 import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.ResUtil;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder> {
 
     private static final int VIEW_TYPE_LIST = 1;
     private static final int VIEW_TYPE_GRID = 2;
+    private static final int LIST_NAME_MAX = 120;
+    private static final int GRID_NAME_MAX = 48;
+    private static final int REMARK_MAX = 40;
+    private static final int SITE_MAX = 24;
+    private static final int YEAR_MAX = 8;
 
     private final OnClickListener listener;
+    private final List<Vod> items;
     private int columnCount = 2;
     private int gridWidth;
     private boolean loadImages = true;
 
     public SearchAdapter(OnClickListener listener) {
         this.listener = listener;
+        this.items = new ArrayList<>();
     }
 
     public interface OnClickListener {
 
         void onItemClick(Vod item);
+    }
+
+    @Override
+    public Vod getItem(int position) {
+        return items.get(position);
+    }
+
+    @Override
+    public List<Vod> getItems() {
+        return items;
+    }
+
+    @Override
+    public void setItems(List<Vod> items) {
+        setItems(items, () -> {});
+    }
+
+    @Override
+    public void setItems(List<Vod> items, Runnable runnable) {
+        this.items.clear();
+        if (items != null) this.items.addAll(items);
+        notifyDataSetChanged();
+        if (runnable != null) runnable.run();
+    }
+
+    @Override
+    public void setItems(List<Vod> items, Callback callback) {
+        setItems(items, () -> {
+            if (callback != null) callback.onUpdateFinished(true);
+        });
+    }
+
+    @Override
+    public void addAll(List<Vod> items) {
+        addAll(items, null);
+    }
+
+    @Override
+    public void addAll(List<Vod> items, Runnable runnable) {
+        if (items == null || items.isEmpty()) {
+            if (runnable != null) runnable.run();
+            return;
+        }
+        int position = this.items.size();
+        this.items.addAll(items);
+        notifyItemRangeInserted(position, items.size());
+        if (runnable != null) runnable.run();
+    }
+
+    @Override
+    public void clear(Runnable runnable) {
+        int count = items.size();
+        items.clear();
+        if (count > 0) notifyItemRangeRemoved(0, count);
+        if (runnable != null) runnable.run();
+    }
+
+    @Override
+    public int getItemCount() {
+        return items.size();
     }
 
     public void setColumnCount(int columnCount) {
@@ -83,6 +152,10 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     }
 
     private void loadGridImage(Vod item, ImageView image) {
+        loadGridImage(item, image, displayName(item, GRID_NAME_MAX));
+    }
+
+    private void loadGridImage(Vod item, ImageView image, String name) {
         if (!loadImages) {
             ImgUtil.hold(item.getPic(), image, true);
             return;
@@ -91,15 +164,52 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         int height = image.getHeight();
         if (width <= 0 && image.getParent() instanceof View parent) width = parent.getWidth();
         if (height <= 0) height = image.getLayoutParams().height;
-        ImgUtil.loadThumb(item.getName(), item.getPic(), image, width, height);
+        ImgUtil.loadThumb(name, item.getPic(), image, width, height);
     }
 
     private void loadListImage(Vod item, ImageView image) {
+        loadListImage(item, image, displayName(item, LIST_NAME_MAX));
+    }
+
+    private void loadListImage(Vod item, ImageView image, String name) {
         if (!loadImages) {
             ImgUtil.hold(item.getPic(), image, true);
             return;
         }
-        ImgUtil.load(item.getName(), item.getPic(), image);
+        ImgUtil.load(name, item.getPic(), image);
+    }
+
+    private static String displayName(Vod item, int maxLength) {
+        return displayText(item.getName(), maxLength);
+    }
+
+    private static String displayText(String text, int maxLength) {
+        if (TextUtils.isEmpty(text) || maxLength <= 0) return "";
+        String value = text.trim();
+        if (value.isEmpty()) return "";
+        StringBuilder builder = new StringBuilder(Math.min(value.length(), maxLength + 3));
+        boolean lastSpace = false;
+        boolean truncated = false;
+        for (int i = 0; i < value.length(); ) {
+            int codePoint = value.codePointAt(i);
+            i += Character.charCount(codePoint);
+            if (Character.isWhitespace(codePoint) || Character.isISOControl(codePoint)) {
+                if (lastSpace || builder.length() == 0) continue;
+                codePoint = ' ';
+                lastSpace = true;
+            } else {
+                lastSpace = false;
+            }
+            if (builder.length() + Character.charCount(codePoint) > maxLength) {
+                truncated = true;
+                break;
+            }
+            builder.appendCodePoint(codePoint);
+        }
+        int length = builder.length();
+        if (length > 0 && builder.charAt(length - 1) == ' ') builder.deleteCharAt(length - 1);
+        if (truncated) builder.append("...");
+        return builder.toString();
     }
 
     @Override
@@ -161,17 +271,24 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         }
 
         private void bind(Vod item) {
-            binding.name.setText(item.getName());
-            binding.site.setText(item.getSiteName());
-            binding.remark.setText(item.getRemarks());
-            binding.site.setVisibility(item.getSiteVisible());
-            binding.remark.setVisibility(item.getRemarkVisible());
+            String name = displayName(item, LIST_NAME_MAX);
+            String site = displayText(item.getSiteName(), SITE_MAX);
+            String remark = displayText(item.getRemarks(), REMARK_MAX);
+            binding.name.setText(name);
+            binding.site.setText(site);
+            binding.remark.setText(remark);
+            binding.site.setVisibility(TextUtils.isEmpty(site) ? View.GONE : View.VISIBLE);
+            binding.remark.setVisibility(TextUtils.isEmpty(remark) ? View.GONE : View.VISIBLE);
             binding.getRoot().setOnClickListener(v -> listener.onItemClick(item));
-            bindImage(item);
+            bindImage(item, name);
         }
 
         private void bindImage(Vod item) {
-            loadListImage(item, binding.image);
+            bindImage(item, displayName(item, LIST_NAME_MAX));
+        }
+
+        private void bindImage(Vod item, String name) {
+            loadListImage(item, binding.image, name);
         }
     }
 
@@ -199,20 +316,28 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
 
         private void bind(Vod item) {
             if (binding.getRoot().getParent() instanceof ViewGroup parent) size(parent, columnCount);
-            binding.name.setText(item.getName());
-            binding.site.setText(item.getSiteName());
-            binding.remark.setText(item.getRemarks());
-            binding.year.setVisibility(item.getYearVisible());
-            binding.year.setText(item.getYear());
-            binding.site.setVisibility(item.getSiteVisible());
-            binding.name.setVisibility(item.getNameVisible());
-            binding.remark.setVisibility(item.getRemarkVisible());
+            String name = displayName(item, GRID_NAME_MAX);
+            String site = displayText(item.getSiteName(), SITE_MAX);
+            String remark = displayText(item.getRemarks(), REMARK_MAX);
+            String year = displayText(item.getYear(), YEAR_MAX);
+            binding.name.setText(name);
+            binding.site.setText(site);
+            binding.remark.setText(remark);
+            binding.year.setText(year);
+            binding.year.setVisibility(item.getYearVisible() == View.VISIBLE && !TextUtils.isEmpty(year) ? View.VISIBLE : View.GONE);
+            binding.site.setVisibility(TextUtils.isEmpty(site) ? View.GONE : View.VISIBLE);
+            binding.name.setVisibility(TextUtils.isEmpty(name) ? View.GONE : View.VISIBLE);
+            binding.remark.setVisibility(TextUtils.isEmpty(remark) ? View.GONE : View.VISIBLE);
             binding.getRoot().setOnClickListener(v -> listener.onItemClick(item));
-            bindImage(item);
+            bindImage(item, name);
         }
 
         private void bindImage(Vod item) {
-            loadGridImage(item, binding.image);
+            bindImage(item, displayName(item, GRID_NAME_MAX));
+        }
+
+        private void bindImage(Vod item, String name) {
+            loadGridImage(item, binding.image, name);
         }
     }
 }

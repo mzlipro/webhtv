@@ -50,13 +50,15 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private static final int MENU_GROUP_ALL = 1;
     private static final int MENU_GROUP_OFFSET = 100;
     private static final int SEARCH_DEFAULT_GRID_COUNT = 2;
-    private static final long SEARCH_UPDATE_DELAY = 80;
-    private static final long SEARCH_SCROLL_DELAY = 180;
+    private static final long SEARCH_UPDATE_DELAY = 120;
+    private static final long SEARCH_SCROLL_DELAY = 220;
     private static final long SEARCH_FIRST_IMAGE_DELAY = 0;
-    private static final long SEARCH_AFTER_SCROLL_DELAY = 240;
-    private static final long SEARCH_IMAGE_DELAY = 80;
-    private static final int SEARCH_BATCH_SIZE = 24;
-    private static final int SEARCH_IMAGE_BATCH_SIZE = 2;
+    private static final long SEARCH_AFTER_SCROLL_DELAY = 500;
+    private static final long SEARCH_IMAGE_DELAY = 120;
+    private static final int SEARCH_LIST_BATCH_SIZE = 12;
+    private static final int SEARCH_GRID_BATCH_SIZE = 8;
+    private static final int SEARCH_IMAGE_BATCH_SIZE = 1;
+    private static final int SEARCH_ITEM_CACHE_SIZE = 24;
     private static final int COLLECT_BATCH_SIZE = 8;
 
     private FragmentCollectBinding mBinding;
@@ -79,6 +81,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private int loadedImageStart;
     private int loadedImageEnd;
     private boolean imageRestoreScheduled;
+    private boolean searchFlushScheduled;
     private boolean searchScrolling;
 
     public CollectFragment() {
@@ -183,6 +186,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.collect.setAdapter(mCollectAdapter = new CollectAdapter(this, isHorizontalUi()));
         mBinding.recycler.setItemAnimator(null);
         mBinding.recycler.setHasFixedSize(true);
+        mBinding.recycler.setItemViewCacheSize(SEARCH_ITEM_CACHE_SIZE);
         mBinding.recycler.addOnScrollListener(mScroller);
         mBinding.recycler.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
@@ -193,11 +197,14 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
                 if (scrolling) {
                     if (mSearchAdapter != null) mSearchAdapter.setLoadImages(false);
                     App.removeCallbacks(flushSearchUpdates, restoreSearchImages);
+                    searchFlushScheduled = false;
                     imageRestoreScheduled = false;
                     resetLoadedSearchImages();
                 } else {
+                    App.removeCallbacks(flushSearchUpdates);
+                    searchFlushScheduled = false;
                     scheduleVisibleSearchImages(SEARCH_AFTER_SCROLL_DELAY);
-                    App.post(flushSearchUpdates, SEARCH_AFTER_SCROLL_DELAY);
+                    scheduleSearchFlush(SEARCH_AFTER_SCROLL_DELAY);
                 }
             }
         });
@@ -430,13 +437,20 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     }
 
     private void scheduleSearchFlush() {
-        App.post(flushSearchUpdates, searchScrolling ? SEARCH_SCROLL_DELAY : SEARCH_UPDATE_DELAY);
+        scheduleSearchFlush(searchScrolling ? SEARCH_SCROLL_DELAY : SEARCH_UPDATE_DELAY);
+    }
+
+    private void scheduleSearchFlush(long delayMillis) {
+        if (searchFlushScheduled) return;
+        searchFlushScheduled = true;
+        App.post(flushSearchUpdates, delayMillis);
     }
 
     private void flushSearchUpdates() {
+        searchFlushScheduled = false;
         if (mBinding == null) return;
         if (searchScrolling && mSearchAdapter.getItemCount() > 0) {
-            App.post(flushSearchUpdates, SEARCH_SCROLL_DELAY);
+            scheduleSearchFlush(SEARCH_SCROLL_DELAY);
             return;
         }
         if (!pendingCollectItems.isEmpty()) {
@@ -446,7 +460,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
             mCollectAdapter.addAll(items);
         }
         if (!pendingSearchItems.isEmpty()) {
-            int count = Math.min(SEARCH_BATCH_SIZE, pendingSearchItems.size());
+            int count = Math.min(getSearchBatchSize(), pendingSearchItems.size());
             List<Vod> items = new ArrayList<>(pendingSearchItems.subList(0, count));
             pendingSearchItems.subList(0, count).clear();
             if (mCollectAdapter.getPosition() == 0) addSearchItems(items);
@@ -455,7 +469,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
             Collect activated = mCollectAdapter.getActivated();
             boolean same = activated != null && activated.getSite().getKey().equals(pendingActiveSiteKey);
             if (same) {
-                int count = Math.min(SEARCH_BATCH_SIZE, pendingActiveSearchItems.size());
+                int count = Math.min(getSearchBatchSize(), pendingActiveSearchItems.size());
                 List<Vod> items = new ArrayList<>(pendingActiveSearchItems.subList(0, count));
                 pendingActiveSearchItems.subList(0, count).clear();
                 addSearchItems(items);
@@ -465,6 +479,10 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
             }
         }
         if (!pendingCollectItems.isEmpty() || !pendingSearchItems.isEmpty() || !pendingActiveSearchItems.isEmpty()) scheduleSearchFlush();
+    }
+
+    private int getSearchBatchSize() {
+        return mSearchAdapter != null && mSearchAdapter.isGridMode() ? SEARCH_GRID_BATCH_SIZE : SEARCH_LIST_BATCH_SIZE;
     }
 
     private void setSearch(Result result) {
@@ -638,6 +656,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         pendingImageEnd = RecyclerView.NO_POSITION;
         resetLoadedSearchImages();
         imageRestoreScheduled = false;
+        searchFlushScheduled = false;
         searchScrolling = false;
         mViewModel.stopSearch();
         SiteHealthStore.flush();
