@@ -16,6 +16,7 @@ import android.view.inputmethod.EditorInfo;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.PopupMenu;
 import androidx.core.view.MenuProvider;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
@@ -44,6 +45,7 @@ import com.google.common.net.HttpHeaders;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -52,9 +54,14 @@ import okhttp3.Response;
 
 public class SearchFragment extends BaseFragment implements MenuProvider, WordAdapter.OnClickListener, RecordAdapter.OnClickListener {
 
+    private static final int MENU_SCOPE_ALL = 1;
+    private static final int MENU_SCOPE_CURRENT = 2;
+    private static final int MENU_SCOPE_GROUP_OFFSET = 100;
+
     private FragmentSearchBinding mBinding;
     private RecordAdapter mRecordAdapter;
     private WordAdapter mWordAdapter;
+    private String mGroup;
     private boolean mCurrentSite;
 
     public static SearchFragment newInstance(String keyword) {
@@ -105,6 +112,7 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
     @Override
     protected void initView() {
         mCurrentSite = !TextUtils.isEmpty(getSiteKey());
+        mGroup = "";
         setRecyclerView();
         checkKeyword();
         search();
@@ -163,7 +171,7 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
         if (fm.findFragmentByTag(collectTag) != null) return;
         String searchTag = SearchFragment.class.getSimpleName();
         FragmentTransaction ft = fm.beginTransaction().setTransition(TRANSIT_FRAGMENT_OPEN);
-        ft.add(R.id.container, CollectFragment.newInstance(keyword, getSearchSiteKey()), collectTag);
+        ft.add(R.id.container, CollectFragment.newInstance(keyword, getSearchSiteKey(), getSearchGroup()), collectTag);
         Optional.ofNullable(fm.findFragmentByTag(searchTag)).ifPresent(ft::hide);
         ft.setReorderingAllowed(true).addToBackStack(null).commit();
     }
@@ -171,6 +179,10 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
     private String getSearchSiteKey() {
         if (!mCurrentSite) return "";
         return TextUtils.isEmpty(getSiteKey()) ? getHome().getKey() : getSiteKey();
+    }
+
+    private String getSearchGroup() {
+        return mCurrentSite ? "" : mGroup;
     }
 
     private void getWord(String text) {
@@ -217,16 +229,38 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
     }
 
     private void onScope() {
-        if (!mCurrentSite) {
+        List<String> groups = Site.getGroups(VodConfig.get().getSites().stream().filter(Site::isSearchable).toList());
+        View anchor = mBinding.toolbar.findViewById(R.id.action_scope);
+        PopupMenu popup = new PopupMenu(requireContext(), anchor == null ? mBinding.toolbar : anchor);
+        popup.getMenu().add(0, MENU_SCOPE_ALL, 0, R.string.search_scope_all);
+        popup.getMenu().add(0, MENU_SCOPE_CURRENT, 1, R.string.search_scope_current);
+        for (int i = 0; i < groups.size(); i++) popup.getMenu().add(1, MENU_SCOPE_GROUP_OFFSET + i, i + 2, groups.get(i));
+        popup.setOnMenuItemClickListener(item -> onScopeSelected(item.getItemId(), groups));
+        popup.show();
+    }
+
+    private boolean onScopeSelected(int itemId, List<String> groups) {
+        if (itemId == MENU_SCOPE_ALL) {
+            mCurrentSite = false;
+            mGroup = "";
+        } else if (itemId == MENU_SCOPE_CURRENT) {
             Site site = getHome();
             if (site.isEmpty() || !site.isSearchable()) {
                 Notify.show(R.string.detail_site_not_searchable);
-                return;
+                return true;
             }
+            mCurrentSite = true;
+            mGroup = "";
             Notify.show(getString(R.string.search_scope_current_hint, site.getName()));
+        } else if (itemId >= MENU_SCOPE_GROUP_OFFSET) {
+            int index = itemId - MENU_SCOPE_GROUP_OFFSET;
+            if (index < 0 || index >= groups.size()) return true;
+            mCurrentSite = false;
+            mGroup = groups.get(index);
+            Notify.show(getString(R.string.search_scope_group_hint, mGroup));
         }
-        mCurrentSite = !mCurrentSite;
         requireActivity().invalidateOptionsMenu();
+        return true;
     }
 
     @Override
@@ -250,7 +284,7 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
     @Override
     public void onPrepareMenu(@NonNull Menu menu) {
         menu.findItem(R.id.action_reset).setVisible(!empty());
-        menu.findItem(R.id.action_scope).setTitle(mCurrentSite ? R.string.search_scope_current : R.string.search_scope_all);
+        menu.findItem(R.id.action_scope).setTitle(mCurrentSite ? getString(R.string.search_scope_current) : TextUtils.isEmpty(mGroup) ? getString(R.string.search_scope_all) : mGroup);
     }
 
     @Override

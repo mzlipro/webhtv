@@ -6,11 +6,13 @@ import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.PopupMenu;
 import androidx.core.view.MenuProvider;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.ViewModelProvider;
@@ -42,6 +44,8 @@ import java.util.List;
 
 public class CollectFragment extends BaseFragment implements MenuProvider, CollectAdapter.OnClickListener, SearchAdapter.OnClickListener, CustomScroller.Callback {
 
+    private static final int MENU_GROUP_ALL = 1;
+    private static final int MENU_GROUP_OFFSET = 100;
     private static final int SEARCH_COLUMN_COUNT = 2;
     private static final long SEARCH_UPDATE_DELAY = 80;
     private static final long SEARCH_SCROLL_DELAY = 180;
@@ -58,12 +62,15 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private CustomScroller mScroller;
     private SiteViewModel mViewModel;
     private List<Site> mSites;
+    private List<String> mGroups;
+    private final List<Collect> mAllCollectItems;
     private final List<Collect> pendingCollectItems;
     private final List<Vod> pendingSearchItems;
     private final List<Vod> pendingActiveSearchItems;
     private final Runnable flushSearchUpdates;
     private final Runnable restoreSearchImages;
     private String pendingActiveSiteKey;
+    private String mFilterGroup;
     private int pendingImageStart;
     private int pendingImageEnd;
     private int loadedImageStart;
@@ -72,12 +79,14 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private boolean searchScrolling;
 
     public CollectFragment() {
+        mAllCollectItems = new ArrayList<>();
         pendingCollectItems = new ArrayList<>();
         pendingSearchItems = new ArrayList<>();
         pendingActiveSearchItems = new ArrayList<>();
         flushSearchUpdates = this::flushSearchUpdates;
         restoreSearchImages = this::restoreSearchImages;
         pendingActiveSiteKey = "";
+        mFilterGroup = "";
         pendingImageStart = RecyclerView.NO_POSITION;
         pendingImageEnd = RecyclerView.NO_POSITION;
         loadedImageStart = RecyclerView.NO_POSITION;
@@ -89,9 +98,14 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     }
 
     public static CollectFragment newInstance(String keyword, String siteKey) {
+        return newInstance(keyword, siteKey, "");
+    }
+
+    public static CollectFragment newInstance(String keyword, String siteKey, String group) {
         Bundle args = new Bundle();
         args.putString("keyword", keyword);
         args.putString("siteKey", siteKey);
+        args.putString("group", group);
         CollectFragment fragment = new CollectFragment();
         fragment.setArguments(args);
         return fragment;
@@ -106,8 +120,17 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         return siteKey == null ? "" : siteKey;
     }
 
+    private String getSearchGroup() {
+        String group = getArguments().getString("group");
+        return group == null ? "" : group;
+    }
+
     private boolean isSiteSearch() {
         return !TextUtils.isEmpty(getSiteKey());
+    }
+
+    private boolean isGroupSearch() {
+        return !TextUtils.isEmpty(getSearchGroup());
     }
 
     @Override
@@ -122,7 +145,13 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         activity.setSupportActionBar(mBinding.toolbar);
         activity.getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         activity.addMenuProvider(this, getViewLifecycleOwner(), Lifecycle.State.RESUMED);
-        activity.setTitle(isSiteSearch() ? getString(R.string.search_result_current, getKeyword()) : getKeyword());
+        activity.setTitle(getTitleText());
+    }
+
+    private String getTitleText() {
+        if (isSiteSearch()) return getString(R.string.search_result_current, getKeyword());
+        if (isGroupSearch()) return getString(R.string.search_result_group, getSearchGroup(), getKeyword());
+        return getString(R.string.search_result_all, getKeyword());
     }
 
     @Override
@@ -265,13 +294,16 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private void setSites() {
         String siteKey = getSiteKey();
+        String group = getSearchGroup();
         mSites = new ArrayList<>();
         for (Site site : VodConfig.get().getSites()) {
             if (!site.isSearchable()) continue;
             if (!TextUtils.isEmpty(siteKey) && !site.getKey().equals(siteKey)) continue;
+            if (!TextUtils.isEmpty(group) && !site.inGroup(group)) continue;
             mSites.add(site);
         }
         SiteHealthStore.sortSites(mSites);
+        mGroups = isSiteSearch() || isGroupSearch() ? new ArrayList<>() : Site.getGroups(mSites);
     }
 
     private void search() {
@@ -279,7 +311,10 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
             if (isSiteSearch()) Notify.show(R.string.detail_site_not_searchable);
             return;
         }
-        mCollectAdapter.setItems(List.of(Collect.all()), () -> mViewModel.searchContent(mSites, getKeyword(), false));
+        Collect all = Collect.all();
+        mAllCollectItems.clear();
+        mAllCollectItems.add(all);
+        mCollectAdapter.setItems(List.of(all), () -> mViewModel.searchContent(mSites, getKeyword(), false));
     }
 
     private void setFixedSearchGrid() {
@@ -316,10 +351,37 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private void setCollect(Result result) {
         if (result == null || result.getList().isEmpty()) return;
+        Collect collect = addMasterCollect(result.getList());
+        if (!matchFilter(collect.getSite())) return;
         mCollectAdapter.add(result.getList());
-        pendingCollectItems.add(Collect.create(result.getList()));
+        if (!hasCollect(mCollectAdapter.getItems(), collect) && !hasCollect(pendingCollectItems, collect)) pendingCollectItems.add(collect);
         if (mCollectAdapter.getPosition() == 0) pendingSearchItems.addAll(result.getList());
         scheduleSearchFlush();
+    }
+
+    private Collect addMasterCollect(List<Vod> items) {
+        mAllCollectItems.get(0).getList().addAll(items);
+        Site site = items.get(0).getSite();
+        Collect collect = findCollect(mAllCollectItems, site.getKey());
+        if (collect == null) {
+            collect = new Collect(site, new ArrayList<>());
+            mAllCollectItems.add(collect);
+        }
+        collect.getList().addAll(items);
+        return collect;
+    }
+
+    private boolean hasCollect(List<Collect> items, Collect collect) {
+        return findCollect(items, collect.getSite().getKey()) != null;
+    }
+
+    private Collect findCollect(List<Collect> items, String siteKey) {
+        for (Collect item : items) if (item.getSite().getKey().equals(siteKey)) return item;
+        return null;
+    }
+
+    private boolean matchFilter(Site site) {
+        return TextUtils.isEmpty(mFilterGroup) || site.inGroup(mFilterGroup);
     }
 
     private void scheduleSearchFlush() {
@@ -414,6 +476,11 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     public void onPrepareMenu(@NonNull Menu menu) {
         MenuItem item = menu.findItem(R.id.action_view);
         if (item != null && mSearchAdapter != null) item.setIcon(mSearchAdapter.isGridMode() ? R.drawable.ic_action_list : R.drawable.ic_action_grid);
+        MenuItem group = menu.findItem(R.id.action_group);
+        if (group != null) {
+            group.setVisible(canFilterGroup());
+            group.setTitle(TextUtils.isEmpty(mFilterGroup) ? getString(R.string.search_scope_all) : mFilterGroup);
+        }
     }
 
     @Override
@@ -426,7 +493,85 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
             setSearchView(!mSearchAdapter.isGridMode());
             return true;
         }
+        if (menuItem.getItemId() == R.id.action_group) {
+            onGroupFilter();
+            return true;
+        }
         return true;
+    }
+
+    private boolean canFilterGroup() {
+        return !isSiteSearch() && !isGroupSearch() && mGroups != null && !mGroups.isEmpty();
+    }
+
+    private void onGroupFilter() {
+        if (!canFilterGroup()) return;
+        View anchor = mBinding.toolbar.findViewById(R.id.action_group);
+        PopupMenu popup = new PopupMenu(requireContext(), anchor == null ? mBinding.toolbar : anchor);
+        popup.getMenu().add(0, MENU_GROUP_ALL, 0, R.string.search_scope_all);
+        for (int i = 0; i < mGroups.size(); i++) popup.getMenu().add(1, MENU_GROUP_OFFSET + i, i + 1, mGroups.get(i));
+        popup.setOnMenuItemClickListener(item -> onGroupFilterSelected(item.getItemId()));
+        popup.show();
+    }
+
+    private boolean onGroupFilterSelected(int itemId) {
+        if (itemId == MENU_GROUP_ALL) {
+            setFilterGroup("");
+        } else if (itemId >= MENU_GROUP_OFFSET) {
+            int index = itemId - MENU_GROUP_OFFSET;
+            if (index >= 0 && index < mGroups.size()) setFilterGroup(mGroups.get(index));
+        }
+        return true;
+    }
+
+    private void setFilterGroup(String group) {
+        flushSearchUpdates();
+        mFilterGroup = group == null ? "" : group;
+        applyFilterGroup(getActiveSiteKey());
+        requireActivity().invalidateOptionsMenu();
+    }
+
+    private String getActiveSiteKey() {
+        if (mCollectAdapter == null || mCollectAdapter.getItemCount() == 0) return "all";
+        return mCollectAdapter.getActivated().getSite().getKey();
+    }
+
+    private void applyFilterGroup(String activeSiteKey) {
+        clearPendingSearchItems();
+        List<Collect> items = getFilteredCollectItems(activeSiteKey);
+        Collect activated = getSelectedCollect(items);
+        mCollectAdapter.setItems(items, () -> {
+            setSearchItems(activated.getList(), () -> mBinding.recycler.scrollToPosition(0));
+            mScroller.setPage(activated.getPage());
+        });
+    }
+
+    private List<Collect> getFilteredCollectItems(String activeSiteKey) {
+        List<Collect> items = new ArrayList<>();
+        Collect all = Collect.all();
+        all.setSelected(false);
+        items.add(all);
+        for (int i = 1; i < mAllCollectItems.size(); i++) {
+            Collect item = mAllCollectItems.get(i);
+            if (!matchFilter(item.getSite())) continue;
+            all.getList().addAll(item.getList());
+            item.setSelected(item.getSite().getKey().equals(activeSiteKey));
+            items.add(item);
+        }
+        if (getSelectedCollect(items) == all) all.setSelected(true);
+        return items;
+    }
+
+    private Collect getSelectedCollect(List<Collect> items) {
+        for (Collect item : items) if (item.isSelected()) return item;
+        return items.get(0);
+    }
+
+    private void clearPendingSearchItems() {
+        pendingCollectItems.clear();
+        pendingSearchItems.clear();
+        pendingActiveSearchItems.clear();
+        pendingActiveSiteKey = "";
     }
 
     @Override
@@ -442,6 +587,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         pendingCollectItems.clear();
         pendingSearchItems.clear();
         pendingActiveSearchItems.clear();
+        mAllCollectItems.clear();
         pendingActiveSiteKey = "";
         pendingImageStart = RecyclerView.NO_POSITION;
         pendingImageEnd = RecyclerView.NO_POSITION;

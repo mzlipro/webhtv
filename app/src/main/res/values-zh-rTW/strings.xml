@@ -298,7 +298,8 @@
     <string name="setting_drive_check">網盤檢測</string>
     <string name="setting_search_thread">搜索線程</string>
     <string name="setting_search_ui">搜索排版</string>
-    <string name="setting_search_column">每行個數</string>
+    <string name="setting_search_column">搜尋結果每行個數</string>
+    <string name="setting_site_column">站點列表預設</string>
     <string name="setting_theme_color">主題色彩</string>
     <string name="setting_auto">自動</string>
     <string name="setting_custom">自訂</string>
@@ -513,6 +514,11 @@
         <item>2個</item>
     </string-array>
 
+    <string-array name="select_site_column">
+        <item>單行</item>
+        <item>雙行</item>
+    </string-array>
+
     <string-array name="select_scale">
         <item>原始</item>
         <item>16:9</item>
@@ -600,8 +606,10 @@
     <string name="search_scope_all">全站</string>
     <string name="search_scope_current">目前站</string>
     <string name="search_scope_current_hint">目前站：%1$s</string>
+    <string name="search_scope_group_hint">分組：%1$s</string>
     <string name="search_result_all">%1$s 的搜尋結果</string>
     <string name="search_result_current">目前站搜尋：%1$s</string>
+    <string name="search_result_group">%1$s 搜尋：%2$s</string>
     <string name="detail_tmdb_searching">正在搜尋 TMDB...</string>
     <string name="detail_tmdb_loading_detail">正在載入 TMDB 詳情...</string>
     <string name="detail_tmdb_search_hint">搜尋標題</string>

@@ -8,4 +8,10 @@
         android:title="@string/menu_view"
         app:showAsAction="always" />
 
+    <item
+        android:id="@+id/action_group"
+        android:title="@string/search_scope_all"
+        android:visible="false"
+        app:showAsAction="always|withText" />
+
 </menu>

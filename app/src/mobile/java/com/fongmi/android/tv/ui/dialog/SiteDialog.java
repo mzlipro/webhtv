@@ -18,6 +18,7 @@ import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.databinding.DialogSiteBinding;
 import com.fongmi.android.tv.impl.SiteListener;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.adapter.SiteAdapter;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
@@ -27,14 +28,10 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickListener {
 
-    private static final Pattern GROUP_PATTERN = Pattern.compile("\\[([^\\]]+)\\]");
     private static String selectedGroup = "";
 
     private DialogSiteBinding binding;
@@ -81,7 +78,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         groups = getGroups();
         binding.recycler.setAdapter(adapter);
         adapter.search(search).change(change);
-        setColumnCount(1);
+        setColumnCount(Setting.getSiteColumn());
         setGroupView();
         filter();
         binding.recycler.setItemAnimator(null);
@@ -120,13 +117,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
     }
 
     private List<String> getGroups() {
-        LinkedHashSet<String> result = new LinkedHashSet<>();
-        for (Site site : VodConfig.get().getSites()) {
-            if (site.isHide()) continue;
-            Matcher matcher = GROUP_PATTERN.matcher(site.getName());
-            while (matcher.find()) result.add("[" + matcher.group(1) + "]");
-        }
-        return new ArrayList<>(result);
+        return new ArrayList<>(Site.getGroups(VodConfig.get().getSites()));
     }
 
     private void setGroupView() {

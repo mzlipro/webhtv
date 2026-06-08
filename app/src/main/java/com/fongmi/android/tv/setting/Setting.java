@@ -176,12 +176,24 @@ public class Setting {
         Prefers.put("search_column", clampSearchColumn(column));
     }
 
+    public static int getSiteColumn() {
+        return clampSiteColumn(Prefers.getInt("site_column", 1));
+    }
+
+    public static void putSiteColumn(int column) {
+        Prefers.put("site_column", clampSiteColumn(column));
+    }
+
     private static int clampSearchThread(int thread) {
         return Math.max(1, Math.min(thread, 32));
     }
 
     private static int clampSearchColumn(int column) {
         return column < 0 || column > 2 ? 0 : column;
+    }
+
+    private static int clampSiteColumn(int column) {
+        return column == 2 ? 2 : 1;
     }
 
     public static boolean isSiteHealthSort() {

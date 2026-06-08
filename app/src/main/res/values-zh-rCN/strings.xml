@@ -298,7 +298,8 @@
     <string name="setting_drive_check">网盘检测</string>
     <string name="setting_search_thread">搜索线程</string>
     <string name="setting_search_ui">搜索排版</string>
-    <string name="setting_search_column">每行个数</string>
+    <string name="setting_search_column">搜索结果每行个数</string>
+    <string name="setting_site_column">站点列表默认</string>
     <string name="setting_theme_color">主题色彩</string>
     <string name="setting_auto">自动</string>
     <string name="setting_custom">自定义</string>
@@ -513,6 +514,11 @@
         <item>2个</item>
     </string-array>
 
+    <string-array name="select_site_column">
+        <item>单行</item>
+        <item>双行</item>
+    </string-array>
+
     <string-array name="select_scale">
         <item>原始</item>
         <item>16:9</item>
@@ -600,8 +606,10 @@
     <string name="search_scope_all">全站</string>
     <string name="search_scope_current">当前站</string>
     <string name="search_scope_current_hint">当前站：%1$s</string>
+    <string name="search_scope_group_hint">分组：%1$s</string>
     <string name="search_result_all">%1$s 的搜索结果</string>
     <string name="search_result_current">当前站搜索：%1$s</string>
+    <string name="search_result_group">%1$s 搜索：%2$s</string>
     <string name="detail_tmdb_searching">正在搜索 TMDB...</string>
     <string name="detail_tmdb_loading_detail">正在加载 TMDB 详情...</string>
     <string name="detail_tmdb_search_hint">搜索标题</string>

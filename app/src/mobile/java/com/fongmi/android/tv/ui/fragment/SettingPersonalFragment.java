@@ -20,6 +20,7 @@ public class SettingPersonalFragment extends BaseFragment {
     private FragmentSettingPersonalBinding mBinding;
     private String[] searchUi;
     private String[] searchColumn;
+    private String[] siteColumn;
 
     public static SettingPersonalFragment newInstance() {
         return new SettingPersonalFragment();
@@ -44,6 +45,7 @@ public class SettingPersonalFragment extends BaseFragment {
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
         mBinding.searchColumn.setOnClickListener(this::setSearchColumn);
+        mBinding.siteColumn.setOnClickListener(this::setSiteColumn);
         mBinding.display.setOnClickListener(this::onDisplay);
     }
 
@@ -51,6 +53,7 @@ public class SettingPersonalFragment extends BaseFragment {
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
         mBinding.searchColumnText.setText((searchColumn = getResources().getStringArray(R.array.select_search_column))[Setting.getSearchColumn()]);
+        mBinding.siteColumnText.setText((siteColumn = getResources().getStringArray(R.array.select_site_column))[Setting.getSiteColumn() - 1]);
         mBinding.displayText.setText(getDisplayText());
     }
 
@@ -83,6 +86,11 @@ public class SettingPersonalFragment extends BaseFragment {
 
     private void setSearchColumn(View view) {
         Setting.putSearchColumn((Setting.getSearchColumn() + 1) % searchColumn.length);
+        setText();
+    }
+
+    private void setSiteColumn(View view) {
+        Setting.putSiteColumn(Setting.getSiteColumn() == 1 ? 2 : 1);
         setText();
     }
 
