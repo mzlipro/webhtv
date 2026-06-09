@@ -116,7 +116,9 @@ public class ConfigDialog extends BaseAlertDialog {
     }
 
     private void onChoose(View view) {
-        FileChooser.from(launcher).show();
+        FileChooser chooser = FileChooser.from(launcher);
+        if (type == 2) chooser.showWallpaper();
+        else chooser.show();
     }
 
     private void detect(String s) {

@@ -159,6 +159,7 @@
     <string name="web_home_extension_text_mode">Text (JSON)</string>
     <string name="web_home_extension_source_type">Source type</string>
     <string name="web_home_extension_choose_file">Choose file</string>
+    <string name="file_wallpaper_hint">OK to set wallpaper · Back to cancel</string>
     <string name="web_home_extension_edit_source">Edit source</string>
     <string name="web_home_extension_edit_code">Edit local code</string>
     <string name="web_home_extension_edit_form">Edit form</string>
@@ -646,6 +647,14 @@
     <string name="detail_tmdb_skip">Skip</string>
     <string name="detail_tmdb_need_key">Configure a TMDB token or API key first</string>
     <string name="detail_tmdb_site_disabled">TMDB matching is disabled for this source</string>
+    <string name="detail_image_previous">Previous</string>
+    <string name="detail_image_next">Next</string>
+    <string name="detail_image_close">Close</string>
+    <string name="detail_image_save">Save</string>
+    <string name="detail_image_saving">Saving image...</string>
+    <string name="detail_image_save_success">Saved to: %1$s</string>
+    <string name="detail_image_save_failed">Image save failed</string>
+    <string name="detail_image_permission_denied">Storage permission denied</string>
     <string name="detail_theme_auto">Theme: Auto</string>
     <string name="detail_theme_dark">Theme: Dark</string>
     <string name="detail_theme_light">Theme: Light</string>

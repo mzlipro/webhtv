@@ -8,9 +8,11 @@ import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.GestureDetector;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -51,8 +53,10 @@ import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
+import com.fongmi.android.tv.utils.TmdbImageSaver;
 import com.fongmi.android.tv.utils.Util;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -65,6 +69,10 @@ import java.util.Locale;
 import java.util.Set;
 
 public class TmdbPersonActivity extends BaseActivity {
+
+    private static final int FOCUS_STROKE = 0xFFFFD166;
+    private static final int FOCUS_STROKE_DP = 3;
+    private static final int PHOTO_STROKE_DP = 1;
 
     private final TmdbService tmdbService = new TmdbService();
     private final List<String> personPhotos = new ArrayList<>();
@@ -79,6 +87,7 @@ public class TmdbPersonActivity extends BaseActivity {
     private String siteKey;
     private int detailMode;
     private boolean light;
+    private boolean savingTmdbPhoto;
 
     public static void start(Activity activity, TmdbPerson person, String siteKey) {
         start(activity, person, siteKey, Setting.getDetailOpenMode());
@@ -548,14 +557,16 @@ public class TmdbPersonActivity extends BaseActivity {
         FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(ResUtil.dp2px(38), ResUtil.dp2px(38), android.view.Gravity.CENTER);
         progress.setLayoutParams(progressParams);
 
+        int[] request = new int[]{0};
+        int[] photoOrientation = new int[]{ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED};
         FrameLayout content = new FrameLayout(this);
         content.setBackgroundColor(Color.BLACK);
         content.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         content.addView(image);
         content.addView(progress);
+        View photoActions = createPhotoActions(dialog, image, progress, photos, current, request, photoOrientation);
+        content.addView(photoActions);
         dialog.setContentView(content);
-        int[] request = new int[]{0};
-        int[] photoOrientation = new int[]{ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED};
         int originalOrientation = getRequestedOrientation();
         boolean wasFullscreen = Util.isFullscreen(this);
         dialog.setOnDismissListener(instance -> {
@@ -594,11 +605,21 @@ public class TmdbPersonActivity extends BaseActivity {
                 showPhotoAt(image, progress, photos, current, request, photoOrientation, distanceX < 0 ? 1 : -1);
                 return true;
             }
+
+            @Override
+            public void onLongPress(MotionEvent event) {
+                if (Util.isMobile()) showPhotoActionDialog(photos.get(current[0]));
+            }
         });
         image.setOnTouchListener((view, event) -> gesture.onTouchEvent(event));
         image.setOnClickListener(view -> dialog.dismiss());
         dialog.setOnKeyListener((instance, keyCode, event) -> {
             if (!KeyUtil.isActionUp(event)) return false;
+            if (photoActions.hasFocus()) return keyCode == KeyEvent.KEYCODE_BACK && dialogCancel(dialog);
+            if (keyCode == KeyEvent.KEYCODE_MENU) {
+                savePhoto(photos.get(current[0]), null);
+                return true;
+            }
             if (KeyUtil.isLeftKey(event)) {
                 showPhotoAt(image, progress, photos, current, request, photoOrientation, -1);
                 return true;
@@ -622,6 +643,130 @@ public class TmdbPersonActivity extends BaseActivity {
         Util.hideSystemUI(window);
         image.requestFocus();
         loadPhotoImage(image, progress, photos.get(current[0]), current[0], request, photoOrientation);
+    }
+
+    private View createPhotoActions(Dialog dialog, ImageView image, ProgressBar progress, List<String> photos, int[] current, int[] request, int[] photoOrientation) {
+        if (Util.isLeanback()) return createPhotoRemoteActions(dialog, image, progress, photos, current, request, photoOrientation);
+        MaterialButton save = createPhotoButton(R.string.detail_image_save, R.drawable.ic_tmdb_download);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ResUtil.dp2px(44), Gravity.TOP | Gravity.END);
+        params.setMargins(0, ResUtil.dp2px(28), ResUtil.dp2px(24), 0);
+        save.setLayoutParams(params);
+        save.setOnClickListener(view -> savePhoto(photos.get(current[0]), save));
+        return save;
+    }
+
+    private View createPhotoRemoteActions(Dialog dialog, ImageView image, ProgressBar progress, List<String> photos, int[] current, int[] request, int[] photoOrientation) {
+        if (image.getId() == View.NO_ID) image.setId(View.generateViewId());
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(ResUtil.dp2px(10), ResUtil.dp2px(8), ResUtil.dp2px(10), ResUtil.dp2px(8));
+        bar.setBackground(createPhotoPanelBackground());
+        bar.setElevation(ResUtil.dp2px(8));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ResUtil.dp2px(64), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        params.setMargins(0, 0, 0, ResUtil.dp2px(32));
+        bar.setLayoutParams(params);
+
+        MaterialButton previous = createPhotoButton(R.string.detail_image_previous, 0);
+        MaterialButton save = createPhotoButton(R.string.detail_image_save, R.drawable.ic_tmdb_download);
+        MaterialButton next = createPhotoButton(R.string.detail_image_next, 0);
+        MaterialButton close = createPhotoButton(R.string.detail_image_close, 0);
+        previous.setOnClickListener(view -> showPhotoAt(image, progress, photos, current, request, photoOrientation, -1));
+        save.setOnClickListener(view -> savePhoto(photos.get(current[0]), save));
+        next.setOnClickListener(view -> showPhotoAt(image, progress, photos, current, request, photoOrientation, 1));
+        close.setOnClickListener(view -> dialog.dismiss());
+        addPhotoBarButton(bar, previous, image);
+        addPhotoBarButton(bar, save, image);
+        addPhotoBarButton(bar, next, image);
+        addPhotoBarButton(bar, close, image);
+        image.setNextFocusDownId(save.getId());
+        return bar;
+    }
+
+    private void addPhotoBarButton(LinearLayout bar, MaterialButton button, ImageView image) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ResUtil.dp2px(46));
+        params.setMargins(ResUtil.dp2px(5), 0, ResUtil.dp2px(5), 0);
+        button.setLayoutParams(params);
+        button.setNextFocusUpId(image.getId());
+        bar.addView(button);
+    }
+
+    private MaterialButton createPhotoButton(int text, int icon) {
+        MaterialButton button = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        if (button.getId() == View.NO_ID) button.setId(View.generateViewId());
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setSingleLine(true);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setPadding(ResUtil.dp2px(14), 0, ResUtil.dp2px(14), 0);
+        button.setCornerRadius(ResUtil.dp2px(23));
+        button.setTextColor(0xFFFFFFFF);
+        button.setIconTint(ColorStateList.valueOf(0xFFFFFFFF));
+        if (icon != 0) {
+            button.setIconResource(icon);
+            button.setIconPadding(ResUtil.dp2px(6));
+        }
+        button.setBackgroundTintList(ColorStateList.valueOf(0x22FFFFFF));
+        button.setRippleColor(ColorStateList.valueOf(0x33FFFFFF));
+        applyPhotoButtonFocus(button, false);
+        button.setOnFocusChangeListener((view, focused) -> applyPhotoButtonFocus(button, focused));
+        return button;
+    }
+
+    private GradientDrawable createPhotoPanelBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(0xB3000000);
+        drawable.setCornerRadius(ResUtil.dp2px(28));
+        drawable.setStroke(ResUtil.dp2px(1), 0x26FFFFFF);
+        return drawable;
+    }
+
+    private void applyPhotoButtonFocus(MaterialButton button, boolean focused) {
+        button.setBackgroundTintList(ColorStateList.valueOf(focused ? 0x33FFFFFF : 0x18FFFFFF));
+        button.setStrokeWidth(ResUtil.dp2px(focused ? FOCUS_STROKE_DP : PHOTO_STROKE_DP));
+        button.setStrokeColor(ColorStateList.valueOf(focused ? FOCUS_STROKE : 0x4DFFFFFF));
+    }
+
+    private void showPhotoActionDialog(String url) {
+        new MaterialAlertDialogBuilder(this)
+                .setItems(new CharSequence[]{getString(R.string.detail_image_save)}, (dialog, which) -> savePhoto(url, null))
+                .show();
+    }
+
+    private void savePhoto(String url, @Nullable MaterialButton button) {
+        if (TextUtils.isEmpty(url) || savingTmdbPhoto) return;
+        savingTmdbPhoto = true;
+        if (button != null) button.setEnabled(false);
+        Notify.show(R.string.detail_image_saving);
+        TmdbImageSaver.save(this, highResTmdbImage(url), new TmdbImageSaver.Callback() {
+            @Override
+            public void success(String name) {
+                finishPhotoSave(button);
+                Notify.show(getString(R.string.detail_image_save_success, name));
+            }
+
+            @Override
+            public void error(String message) {
+                finishPhotoSave(button);
+                String prefix = getString(R.string.detail_image_save_failed);
+                Notify.show(TextUtils.isEmpty(message) || prefix.equals(message) ? prefix : prefix + "\n" + message);
+            }
+        });
+    }
+
+    private void finishPhotoSave(@Nullable MaterialButton button) {
+        savingTmdbPhoto = false;
+        if (button != null) button.setEnabled(true);
+    }
+
+    private boolean dialogCancel(Dialog dialog) {
+        dialog.dismiss();
+        return true;
     }
 
     private void showPhotoAt(ImageView image, ProgressBar progress, List<String> photos, int[] current, int[] request, int[] photoOrientation, int direction) {

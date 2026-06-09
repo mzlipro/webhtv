@@ -158,6 +158,7 @@
     <string name="web_home_extension_text_mode">文本(JSON)</string>
     <string name="web_home_extension_source_type">来源方式</string>
     <string name="web_home_extension_choose_file">选择文件</string>
+    <string name="file_wallpaper_hint">OK 设为背景 · 返回取消</string>
     <string name="web_home_extension_edit_source">编辑扩展源</string>
     <string name="web_home_extension_edit_code">编辑本地代码</string>
     <string name="web_home_extension_edit_form">编辑表单</string>
@@ -641,6 +642,14 @@
     <string name="detail_tmdb_skip">跳过</string>
     <string name="detail_tmdb_need_key">请先配置 TMDB Token 或 API Key</string>
     <string name="detail_tmdb_site_disabled">当前站源未启用 TMDB 匹配</string>
+    <string name="detail_image_previous">上一张</string>
+    <string name="detail_image_next">下一张</string>
+    <string name="detail_image_close">关闭</string>
+    <string name="detail_image_save">保存</string>
+    <string name="detail_image_saving">正在保存图片...</string>
+    <string name="detail_image_save_success">已保存到：%1$s</string>
+    <string name="detail_image_save_failed">图片保存失败</string>
+    <string name="detail_image_permission_denied">未获得存储权限</string>
     <string name="detail_theme_auto">主题：自动</string>
     <string name="detail_theme_dark">主题：深色</string>
     <string name="detail_theme_light">主题：浅色</string>

@@ -27,6 +27,8 @@ import java.util.List;
 
 public class FileChooser {
 
+    public static final String EXTRA_WALLPAPER = "wallpaper";
+
     private final ActivityResultLauncher<Intent> launcher;
 
     public static FileChooser from(ActivityResultLauncher<Intent> launcher) {
@@ -39,6 +41,10 @@ public class FileChooser {
 
     public void show() {
         show("*/*");
+    }
+
+    public void showWallpaper() {
+        launcher.launch(new Intent(App.get(), FileActivity.class).putExtra(EXTRA_WALLPAPER, true));
     }
 
     public void show(String mimeType) {
