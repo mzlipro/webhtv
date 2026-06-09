@@ -301,7 +301,9 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     private void releaseService(boolean owner) {
         mService.removePlayerCallback(mPlayerCallback);
         if (owner) mService.setNavigationCallback(null, null);
-        if (mService.hasExternalClient() || mService.hasPlayerCallback()) {
+        if (owner && mService.isKeepAlive()) {
+            mService.resetSessionActivity();
+        } else if (mService.hasExternalClient() || mService.hasPlayerCallback()) {
             if (owner) mService.suspend();
             mService.resetSessionActivity();
         } else if (owner) {

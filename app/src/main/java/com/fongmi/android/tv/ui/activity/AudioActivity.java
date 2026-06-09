@@ -39,13 +39,16 @@ import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.ui.audio.AudioMiniPlayer;
 import com.fongmi.android.tv.ui.custom.CustomSeekView;
+import com.fongmi.android.tv.ui.dialog.AudioCommentDialog;
 import com.fongmi.android.tv.utils.AudioUtil;
 import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.LyricUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
+import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.utils.Prefers;
 import com.google.common.util.concurrent.FluentFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -183,6 +186,16 @@ public class AudioActivity extends PlaybackActivity {
         return true;
     }
 
+    public static void startFromMini(Activity activity, AudioMiniPlayer.State state) {
+        if (state == null) return;
+        deactivateMini(null);
+        start(activity, state.playbackKey, state.siteKey, state.flag, state.title, state.subtitle(), state.pic, state.episodes, state.index, state.copyResult(), state.timeout, state.headers);
+    }
+
+    private static void deactivateMini(PlaybackService service) {
+        AudioMiniPlayer.deactivateForFull(service);
+    }
+
     private static void start(Activity activity, String playbackKey, String siteKey, String flag, String title, String subtitle, String pic, List<Episode> episodes, int index, Result result, long timeout, Map<String, String> headers) {
         String objectKey = "audio_" + System.nanoTime();
         if (episodes != null) EPISODE_CACHE.put(objectKey, new ArrayList<>(episodes));
@@ -289,12 +302,13 @@ public class AudioActivity extends PlaybackActivity {
             return insets;
         });
         ViewCompat.requestApplyInsets(binding.getRoot());
+        binding.getRoot().post(() -> ViewCompat.requestApplyInsets(binding.getRoot()));
     }
 
     @Override
     protected void initEvent() {
         binding.minimize.setOnClickListener(view -> moveTaskToBack(true));
-        binding.close.setOnClickListener(view -> stopAndFinish());
+        binding.close.setOnClickListener(view -> closeAudio());
         binding.play.setOnClickListener(view -> togglePlay());
         binding.prev.setOnClickListener(view -> playPrev(true));
         binding.next.setOnClickListener(view -> playNext(true));
@@ -314,6 +328,7 @@ public class AudioActivity extends PlaybackActivity {
         });
         binding.lyricSearch.setOnClickListener(view -> showLyricSearch());
         binding.lyricPanel.setOnTouchListener(this::onLyricTouch);
+        binding.commentButton.setOnClickListener(view -> showComments());
         binding.coverBackground.setOnClickListener(view -> toggleCoverBackground());
         binding.playlistButton.setOnClickListener(view -> showPlaylist(true));
         binding.playlistClose.setOnClickListener(view -> showPlaylist(false));
@@ -344,7 +359,14 @@ public class AudioActivity extends PlaybackActivity {
 
     @Override
     protected void onServiceConnected() {
+        AudioMiniPlayer.deactivateForFull(service());
         setMode(mode, false);
+        if (isOwner() && player() != null && !player().isReleased() && !player().isEmpty() && getPlaybackKey().equals(player().getKey())) {
+            started = true;
+            updatePlayIcon();
+            updatePlaylistState();
+            return;
+        }
         if (!started) playCurrent(initialResult);
     }
 
@@ -404,6 +426,7 @@ public class AudioActivity extends PlaybackActivity {
             finish();
             return;
         }
+        initialResult = Result.fromJson(Objects.toString(target, ""));
         if (target.hasArtwork()) getIntent().putExtra(EXTRA_PIC, target.getArtwork());
         lyricEnabled = shouldEnableLyrics(target);
         lyricOffset = getSavedLyricOffset();
@@ -502,8 +525,50 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private void stopAndFinish() {
-        if (player() != null) player().stop();
+        AudioMiniPlayer.deactivateForFull(service());
+        if (service() != null && player() != null) player().stop();
         finish();
+    }
+
+    private void closeAudio() {
+        if (Util.isMobile()) minimizeToFloatingPlayer();
+        else stopAndFinish();
+    }
+
+    private void minimizeToFloatingPlayer() {
+        if (service() == null || player() == null || player().isReleased() || player().isEmpty()) {
+            finish();
+            return;
+        }
+        AudioMiniPlayer.activate(buildMiniState(), service());
+        service().setNavigationCallback(null, null);
+        binding.playlistPanel.setVisibility(View.GONE);
+        binding.audioContent.animate()
+                .scaleX(0.78f)
+                .scaleY(0.78f)
+                .translationX(ResUtil.dp2px(90))
+                .translationY(ResUtil.dp2px(70))
+                .alpha(0f)
+                .setDuration(180)
+                .withEndAction(this::finish)
+                .start();
+    }
+
+    private AudioMiniPlayer.State buildMiniState() {
+        return new AudioMiniPlayer.State(
+                getPlaybackKey(),
+                getSiteKey(),
+                getFlag(),
+                getTitleText(),
+                getSubtitleText(),
+                getPic(),
+                episodes,
+                index,
+                initialResult,
+                getTimeout(),
+                getHeaders(),
+                mode
+        );
     }
 
     private void setMode(int mode, boolean toast) {
@@ -615,6 +680,11 @@ public class AudioActivity extends PlaybackActivity {
                         .show();
             });
         });
+    }
+
+    private void showComments() {
+        long duration = service() == null || player() == null || player().isReleased() || player().getDuration() == C.TIME_UNSET ? 0 : player().getDuration();
+        AudioCommentDialog.create(getTitleText(), getSubtitleText(), duration).show(this);
     }
 
     private void applyManualLyric(LyricUtil.Option option, String title, String subtitle, long duration) {

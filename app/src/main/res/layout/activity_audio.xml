@@ -58,7 +58,19 @@
                 android:background="@drawable/shape_audio_round_button"
                 android:focusable="true"
                 android:padding="9dp"
-                android:src="@drawable/ic_audio_close"
+                android:src="@drawable/ic_audio_float_bar"
+                app:tint="@color/white" />
+
+            <ImageView
+                android:id="@+id/commentButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="50dp"
+                android:background="@drawable/shape_audio_round_button"
+                android:focusable="true"
+                android:padding="9dp"
+                android:src="@drawable/ic_audio_comment"
                 app:tint="@color/white" />
 
             <LinearLayout
@@ -66,7 +78,7 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:layout_marginStart="56dp"
-                android:layout_marginEnd="56dp"
+                android:layout_marginEnd="104dp"
                 android:gravity="center"
                 android:orientation="horizontal">
 

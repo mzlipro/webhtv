@@ -293,6 +293,8 @@
     <string name="setting_incognito">無痕模式</string>
     <string name="setting_personal">個性設定</string>
     <string name="setting_home_vod_auto_load">預設載入點播</string>
+    <string name="setting_fullscreen_menu_key">全屏選單鍵</string>
+    <string name="setting_home_menu_key">首頁選單鍵</string>
     <string name="setting_play_back_to_detail">播放返回詳情頁</string>
     <string name="setting_home_history">首頁最近觀看</string>
     <string name="setting_drive_check">網盤檢測</string>
@@ -501,6 +503,24 @@
         <item>中</item>
         <item>大</item>
         <item>特大</item>
+    </string-array>
+
+    <string-array name="select_fullscreen_menu_key">
+        <item>控制欄</item>
+        <item>選集</item>
+    </string-array>
+
+    <string-array name="select_home_menu_key">
+        <item>選項彈窗</item>
+        <item>切換站源</item>
+        <item>切換線路</item>
+        <item>直播頁面</item>
+        <item>歷史頁面</item>
+        <item>搜尋頁面</item>
+        <item>推送頁面</item>
+        <item>投屏頁面</item>
+        <item>收藏頁面</item>
+        <item>設定頁面</item>
     </string-array>
 
     <string-array name="select_search_ui">

@@ -19,6 +19,8 @@ import com.fongmi.android.tv.ui.dialog.HomeButtonDialog;
 public class SettingPersonalActivity extends BaseActivity {
 
     private ActivitySettingPersonalBinding mBinding;
+    private String[] fullscreenMenuKey;
+    private String[] homeMenuKey;
     private String[] searchUi;
     private String[] searchColumn;
 
@@ -45,6 +47,8 @@ public class SettingPersonalActivity extends BaseActivity {
     protected void initEvent() {
         mBinding.homeVodAutoLoad.setOnClickListener(this::setHomeVodAutoLoad);
         mBinding.homeButtons.setOnClickListener(this::onHomeButtons);
+        mBinding.fullscreenMenuKey.setOnClickListener(this::setFullscreenMenuKey);
+        mBinding.homeMenuKey.setOnClickListener(this::setHomeMenuKey);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.homeHistory.setOnClickListener(this::setHomeHistory);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
@@ -55,6 +59,8 @@ public class SettingPersonalActivity extends BaseActivity {
     private void setText() {
         mBinding.homeVodAutoLoadText.setText(getSwitch(Setting.isHomeVodAutoLoad()));
         mBinding.homeButtonsText.setText(getString(R.string.home_buttons_selected, HomeButton.getButtons().size(), HomeButton.all().size()));
+        mBinding.fullscreenMenuKeyText.setText((fullscreenMenuKey = getResources().getStringArray(R.array.select_fullscreen_menu_key))[Setting.getFullscreenMenuKey()]);
+        mBinding.homeMenuKeyText.setText((homeMenuKey = getResources().getStringArray(R.array.select_home_menu_key))[Setting.getHomeMenuKey()]);
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.homeHistoryText.setText(getSwitch(Setting.isHomeHistory()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
@@ -91,6 +97,16 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void onHomeButtons(View view) {
         HomeButtonDialog.show(this, this::setText);
+    }
+
+    private void setFullscreenMenuKey(View view) {
+        Setting.putFullscreenMenuKey((Setting.getFullscreenMenuKey() + 1) % fullscreenMenuKey.length);
+        setText();
+    }
+
+    private void setHomeMenuKey(View view) {
+        Setting.putHomeMenuKey((Setting.getHomeMenuKey() + 1) % homeMenuKey.length);
+        setText();
     }
 
     private void setPlayBackToDetail(View view) {

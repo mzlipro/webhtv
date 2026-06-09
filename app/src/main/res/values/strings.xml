@@ -294,6 +294,8 @@
     <string name="setting_incognito">Incognito mode</string>
     <string name="setting_personal">Personal settings</string>
     <string name="setting_home_vod_auto_load">Auto-load VOD</string>
+    <string name="setting_fullscreen_menu_key">Fullscreen menu key</string>
+    <string name="setting_home_menu_key">Home menu key</string>
     <string name="setting_play_back_to_detail">Return playback to detail</string>
     <string name="setting_home_history">Home recent history</string>
     <string name="setting_drive_check">Drive link check</string>
@@ -506,6 +508,24 @@
         <item>Medium</item>
         <item>Large</item>
         <item>Extra</item>
+    </string-array>
+
+    <string-array name="select_fullscreen_menu_key">
+        <item>Control</item>
+        <item>Episodes</item>
+    </string-array>
+
+    <string-array name="select_home_menu_key">
+        <item>Select dialog</item>
+        <item>Change site</item>
+        <item>Change config</item>
+        <item>Live page</item>
+        <item>History page</item>
+        <item>Search page</item>
+        <item>Push page</item>
+        <item>Cast page</item>
+        <item>Keep page</item>
+        <item>Setting page</item>
     </string-array>
 
     <string-array name="select_search_ui">

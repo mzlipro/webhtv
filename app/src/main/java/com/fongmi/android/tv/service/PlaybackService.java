@@ -61,6 +61,7 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
     private MediaLibrarySession session;
     private Runnable onNewBinding;
     private boolean externalBound;
+    private boolean keepAlive;
     private PlayerManager player;
     private String navigationKey;
     private Player exoPlayer;
@@ -197,11 +198,13 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
     public void shutdown() {
         if (!running) return;
         running = false;
+        keepAlive = false;
         stopAndClear();
         stopSelf();
     }
 
     private void tryShutdown() {
+        if (keepAlive) return;
         if (!hasNavigationCallback() && !hasExternalClient()) shutdown();
     }
 
@@ -266,6 +269,14 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
 
     public boolean hasExternalClient() {
         return externalBound;
+    }
+
+    public void setKeepAlive(boolean keepAlive) {
+        this.keepAlive = keepAlive;
+    }
+
+    public boolean isKeepAlive() {
+        return keepAlive;
     }
 
     public void setSessionActivity(PendingIntent pendingIntent) {

@@ -136,6 +136,23 @@ public class Setting {
         Prefers.put("home_vod_auto_load", autoLoad);
     }
 
+    public static int getFullscreenMenuKey() {
+        return Prefers.getInt("fullscreen_menu_key", 0) == 1 ? 1 : 0;
+    }
+
+    public static void putFullscreenMenuKey(int menuKey) {
+        Prefers.put("fullscreen_menu_key", menuKey);
+    }
+
+    public static int getHomeMenuKey() {
+        int menuKey = Prefers.getInt("home_menu_key", 0);
+        return menuKey < 0 || menuKey > 9 ? 0 : menuKey;
+    }
+
+    public static void putHomeMenuKey(int menuKey) {
+        Prefers.put("home_menu_key", menuKey);
+    }
+
     public static boolean isPlayBackToDetail() {
         return Prefers.getBoolean("play_back_to_detail");
     }

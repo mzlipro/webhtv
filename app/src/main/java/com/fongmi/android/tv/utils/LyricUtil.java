@@ -89,6 +89,29 @@ public class LyricUtil {
         return "";
     }
 
+    public static Track findNeteaseTrack(String title, String subtitle, long durationMs) {
+        try {
+            List<Query> queries = buildQueries(title, subtitle);
+            for (Query query : queries) {
+                String keyword = TextUtils.isEmpty(query.artist) ? query.song : query.artist + " " + query.song;
+                String url = "https://music.163.com/api/search/get/web?s=" + encode(keyword) + "&type=1&limit=10";
+                JsonObject object = Json.safeObject(Json.parse(OkHttp.string(url, NETEASE_HEADERS)));
+                JsonArray songs = object.has("result") && object.get("result").isJsonObject() && object.getAsJsonObject("result").has("songs") ? object.getAsJsonObject("result").getAsJsonArray("songs") : new JsonArray();
+                SpiderDebug.log(TAG, "网易云歌曲查询 query=%s/%s result=%d", query.song, query.artist, songs.size());
+                List<Candidate> matches = new ArrayList<>();
+                for (JsonElement element : songs) {
+                    Candidate candidate = Candidate.netease(Json.safeObject(element));
+                    if (candidate.matches(query, durationMs)) matches.add(candidate);
+                }
+                matches.sort((a, b) -> Long.compare(a.durationDiff(durationMs), b.durationDiff(durationMs)));
+                if (!matches.isEmpty()) return matches.get(0).track();
+            }
+        } catch (Throwable e) {
+            SpiderDebug.log(TAG, "网易云歌曲匹配异常 title=%s subtitle=%s error=%s", title, subtitle, e.getMessage());
+        }
+        return null;
+    }
+
     public static List<Option> findOptions(String title, String subtitle, long durationMs) {
         List<Option> options = new ArrayList<>();
         try {
@@ -379,6 +402,10 @@ public class LyricUtil {
             return new Option(source, name, artist, durationMs, lyric);
         }
 
+        private Track track() {
+            return new Track(id, name, artist, durationMs);
+        }
+
         private boolean matchArtist(String expected) {
             for (String item : artist.split("[/&、,，]")) {
                 String actual = normalize(item);
@@ -389,6 +416,43 @@ public class LyricUtil {
 
         private static long secondsToMs(double value) {
             return value <= 0 ? 0 : Math.round(value * 1000);
+        }
+    }
+
+    public static final class Track {
+
+        private final String id;
+        private final String name;
+        private final String artist;
+        private final long durationMs;
+
+        private Track(String id, String name, String artist, long durationMs) {
+            this.id = Objects.toString(id, "");
+            this.name = Objects.toString(name, "");
+            this.artist = Objects.toString(artist, "");
+            this.durationMs = durationMs;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getArtist() {
+            return artist;
+        }
+
+        public long getDurationMs() {
+            return durationMs;
+        }
+
+        public String getLabel() {
+            String duration = durationMs > 0 ? String.format(Locale.getDefault(), "%d:%02d", durationMs / 60000, durationMs / 1000 % 60) : "--:--";
+            String by = TextUtils.isEmpty(artist) ? name : name + " - " + artist;
+            return duration + "  " + by;
         }
     }
 
