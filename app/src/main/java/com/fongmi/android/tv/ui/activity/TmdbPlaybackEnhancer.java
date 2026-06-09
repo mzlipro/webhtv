@@ -18,6 +18,8 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class TmdbPlaybackEnhancer {
 
@@ -63,8 +65,14 @@ public class TmdbPlaybackEnhancer {
         try {
             TmdbItem item = getCachedTmdbMatch();
             if (item == null) {
-                List<TmdbItem> items = tmdbService.search(searchTitle(vod), tmdbConfig);
-                item = chooseTmdbMatch(items, searchTitle(vod));
+                String title = searchTitle(vod);
+                int year = sourceYear(vod, title);
+                List<TmdbItem> items = tmdbService.search(title, tmdbConfig);
+                item = chooseTmdbMatch(items, title, year);
+                if (item == null) {
+                    SplitYearQuery split = splitYearQuery(title, vod);
+                    if (split != null) item = chooseTmdbMatch(tmdbService.search(split.query, tmdbConfig), split.query, split.year);
+                }
                 if (item != null) saveTmdbMatch(item);
             }
             if (item == null) return null;
@@ -87,10 +95,11 @@ public class TmdbPlaybackEnhancer {
     }
 
     @Nullable
-    private TmdbItem chooseTmdbMatch(List<TmdbItem> items, String title) {
+    private TmdbItem chooseTmdbMatch(List<TmdbItem> items, String title, int year) {
         if (items == null || items.isEmpty()) return null;
         String key = normalize(title);
-        for (TmdbItem item : items) if (normalize(item.getTitle()).equals(key)) return item;
+        for (TmdbItem item : items) if (normalize(item.getTitle()).equals(key) && yearMatches(item, year)) return item;
+        if (year > 0) return null;
         for (TmdbItem item : items) if (normalize(item.getTitle()).contains(key) || key.contains(normalize(item.getTitle()))) return item;
         return items.get(0);
     }
@@ -102,6 +111,65 @@ public class TmdbPlaybackEnhancer {
 
     private String normalize(String text) {
         return Objects.toString(text, "").replaceAll("[\\s·•:：\\-_/\\\\|()（）\\[\\]【】]+", "").trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean yearMatches(TmdbItem item, int year) {
+        if (year <= 0) return true;
+        return tmdbItemYear(item) == year;
+    }
+
+    private int sourceYear(Vod vod, String title) {
+        int year = vod == null ? 0 : firstYear(vod.getYear());
+        if (year > 0) return year;
+        year = vod == null ? 0 : firstYear(vod.getName());
+        if (year > 0) return year;
+        year = firstYear(host.getName());
+        return year > 0 ? year : firstYear(title);
+    }
+
+    @Nullable
+    private SplitYearQuery splitYearQuery(String title, Vod vod) {
+        int year = sourceYear(vod, title);
+        if (year <= 0) return null;
+        String source = !TextUtils.isEmpty(title) && firstYear(title) == year ? title : vod == null ? "" : vod.getName();
+        if (firstYear(source) != year) source = host.getName();
+        if (firstYear(source) != year) return null;
+        String query = removeYearFromTitle(source, year);
+        if (TextUtils.isEmpty(query) || normalize(query).equals(normalize(source))) return null;
+        return new SplitYearQuery(query, year);
+    }
+
+    private String removeYearFromTitle(String text, int year) {
+        String cleaned = Objects.toString(text, "").replaceAll("(?<!\\d)" + year + "(?!\\d)", " ");
+        cleaned = cleaned.replaceAll("[\\[【「『(（]\\s*[\\]】」』)）]", " ");
+        cleaned = cleaned.replaceAll("[._\\-+]+", " ");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        return cleaned.replaceAll("^[\\s:：,，.。·|/\\\\]+|[\\s:：,，.。·|/\\\\]+$", "");
+    }
+
+    private int tmdbItemYear(TmdbItem item) {
+        int year = firstYear(item.getSubtitle());
+        return year > 0 ? year : firstYear(item.getTitle());
+    }
+
+    private int firstYear(String text) {
+        Matcher matcher = Pattern.compile("(19\\d{2}|20\\d{2})").matcher(Objects.toString(text, ""));
+        while (matcher.find()) {
+            int year = Integer.parseInt(matcher.group(1));
+            if (year >= 1900 && year <= 2099) return year;
+        }
+        return 0;
+    }
+
+    private static class SplitYearQuery {
+
+        private final String query;
+        private final int year;
+
+        private SplitYearQuery(String query, int year) {
+            this.query = query;
+            this.year = year;
+        }
     }
 
     private static class TmdbUpdate {

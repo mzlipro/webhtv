@@ -1210,7 +1210,15 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                     logTmdbMatch("基础匹配未命中，使用站源详情继续消歧：片名=%s，清洗后=%s，年份=%s，演员=%s，导演=%s，简介长度=%d",
                             finalVod.getName(), query, finalVod.getYear(), finalVod.getActor(), finalVod.getDirector(), finalVod.getContent().length());
                     TmdbBundle bundle = chooseTmdbBundle(result.searchItems(), query, finalVod);
-                    if (bundle != null) result = new TmdbLoadResult(bundle, result.searchItems());
+                    List<TmdbItem> matchedSearchItems = result.searchItems();
+                    if (bundle == null) {
+                        SplitYearSearch split = searchSplitYearTmdbItems(query, finalVod);
+                        if (split != null) {
+                            bundle = chooseTmdbBundle(split.items(), split.query(), finalVod);
+                            matchedSearchItems = split.items();
+                        }
+                    }
+                    result = new TmdbLoadResult(bundle, matchedSearchItems);
                 }
                 TmdbLoadResult finalResult = result;
                 runOnAliveUi(() -> {
@@ -1278,6 +1286,13 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                     searchItems = searchTmdbItems(query, getNameText());
                     logTmdbMatch("搜索完成：原始标题=%s，实际搜索词=%s，返回数量=%d", getNameText(), query, searchItems.size());
                     match = chooseTmdbMatch(searchItems, query, null);
+                    if (match == null) {
+                        SplitYearSearch split = searchSplitYearTmdbItems(query, null);
+                        if (split != null) {
+                            searchItems = split.items();
+                            match = chooseTmdbMatch(searchItems, split.query(), null);
+                        }
+                    }
                 }
                 if (match != null && tmdbBundle == null) tmdbBundle = loadTmdbBundle(match);
             }
@@ -1642,6 +1657,15 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         List<TmdbItem> fallbackItems = tmdbService.search(fallbackQuery, tmdbConfig);
         logTmdbMatch("TMDB 搜索回退：清洗后无结果，原始词=%s，结果数=%d", fallbackQuery, fallbackItems.size());
         return fallbackItems;
+    }
+
+    @Nullable
+    private SplitYearSearch searchSplitYearTmdbItems(String keyword, @Nullable Vod sourceVod) throws Exception {
+        SplitYearQuery split = splitYearQuery(keyword, sourceVod);
+        if (split == null) return null;
+        List<TmdbItem> items = tmdbService.search(split.query(), tmdbConfig);
+        logTmdbMatch("TMDB 拆年搜索：原始词=%s，拆分标题=%s，年份=%d，结果数=%d", keyword, split.query(), split.year(), items.size());
+        return items.isEmpty() ? null : new SplitYearSearch(split.query(), split.year(), items);
     }
 
     private void toggleOverview() {
@@ -4959,6 +4983,33 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         return year > 0 ? year : firstYear(keyword);
     }
 
+    @Nullable
+    private SplitYearQuery splitYearQuery(String keyword, @Nullable Vod sourceVod) {
+        int year = sourceYear(keyword, sourceVod);
+        if (year <= 0) return null;
+        List<String> sources = new ArrayList<>();
+        if (!TextUtils.isEmpty(keyword)) sources.add(keyword);
+        if (sourceVod != null && !TextUtils.isEmpty(sourceVod.getName())) sources.add(sourceVod.getName());
+        if (!TextUtils.isEmpty(getNameText())) sources.add(getNameText());
+        for (String source : sources) {
+            if (firstYear(source) != year) continue;
+            String query = removeYearFromTitle(source, year);
+            if (TextUtils.isEmpty(query) || normalize(query).equals(normalize(source))) continue;
+            logTmdbMatch("标题拆年：原始=%s，标题=%s，年份=%d", source, query, year);
+            return new SplitYearQuery(query, year);
+        }
+        return null;
+    }
+
+    private String removeYearFromTitle(String text, int year) {
+        String cleaned = Objects.toString(text, "").replaceAll("(?<!\\d)" + year + "(?!\\d)", " ");
+        cleaned = cleaned.replaceAll("[\\[【「『(（]\\s*[\\]】」』)）]", " ");
+        cleaned = cleaned.replaceAll("[._\\-+]+", " ");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("^[\\s:：,，.。·|/\\\\]+|[\\s:：,，.。·|/\\\\]+$", "");
+        return cleanTmdbSearchQuery(cleaned);
+    }
+
     private int firstYear(String text) {
         // 只识别 1900-2099 的四位年份，避免把集数、清晰度、评分等数字误当年份。
         Matcher matcher = Pattern.compile("(19\\d{2}|20\\d{2})").matcher(Objects.toString(text, ""));
@@ -5450,6 +5501,12 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private record TmdbLoadResult(TmdbBundle bundle, List<TmdbItem> searchItems) {
+    }
+
+    private record SplitYearQuery(String query, int year) {
+    }
+
+    private record SplitYearSearch(String query, int year, List<TmdbItem> items) {
     }
 
     private record EpisodePosition(int season, int number) {
