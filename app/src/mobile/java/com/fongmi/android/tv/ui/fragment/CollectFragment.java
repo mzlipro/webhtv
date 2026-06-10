@@ -596,9 +596,9 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private int getCollectWidth() {
         int width = 0;
-        int space = ResUtil.dp2px(48);
-        int minWidth = ResUtil.dp2px(128);
-        int maxWidth = ResUtil.dp2px(160);
+        int space = ResUtil.dp2px(28);
+        int minWidth = ResUtil.dp2px(120);
+        int maxWidth = ResUtil.dp2px(150);
         for (Site site : mSites) width = Math.max(width, ResUtil.getTextWidth(site.getName(), 14));
         return Math.max(minWidth, Math.min(width + space, maxWidth));
     }

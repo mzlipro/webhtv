@@ -28,7 +28,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     private static final int REMARK_MAX = 40;
     private static final int SITE_MAX = 24;
     private static final int YEAR_MAX = 8;
-    public static final int GRID_MIN_WIDTH_DP = 96;
+    public static final int GRID_MIN_WIDTH_DP = 72;
 
     private final OnClickListener listener;
     private final List<Vod> items;
@@ -349,7 +349,8 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
             int available = gridWidth;
             if (available <= 0) available = parent.getWidth() - parent.getPaddingStart() - parent.getPaddingEnd();
             if (available <= 0) return this;
-            int width = Math.max(ResUtil.dp2px(GRID_MIN_WIDTH_DP), (available - margin * count) / count);
+            int width = (available - margin * count) / count;
+            if (width <= 0) width = Math.max(1, available / count);
             int height = (int) (width / 0.75f);
             if (binding.getRoot().getLayoutParams().width != width) binding.getRoot().getLayoutParams().width = width;
             if (binding.image.getLayoutParams().height != height) binding.image.getLayoutParams().height = height;

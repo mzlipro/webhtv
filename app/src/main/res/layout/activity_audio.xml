@@ -94,6 +94,17 @@
             </LinearLayout>
 
             <ImageView
+                android:id="@+id/keep"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/shape_audio_round_button"
+                android:focusable="true"
+                android:padding="9dp"
+                android:src="@drawable/ic_audio_keep_off"
+                app:tint="@color/white" />
+
+            <ImageView
                 android:id="@+id/commentButton"
                 android:layout_width="40dp"
                 android:layout_height="40dp"

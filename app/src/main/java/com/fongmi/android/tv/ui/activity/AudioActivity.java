@@ -30,15 +30,17 @@ import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Flag;
+import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.databinding.ActivityAudioBinding;
+import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.PlayerSetting;
-import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.ui.audio.AudioHistory;
 import com.fongmi.android.tv.ui.audio.AudioMiniPlayer;
 import com.fongmi.android.tv.ui.custom.CustomSeekView;
 import com.fongmi.android.tv.ui.dialog.AudioCommentDialog;
@@ -153,7 +155,7 @@ public class AudioActivity extends PlaybackActivity {
                 Episode episode = selectEpisode(key, id, flag, mark);
                 int index = Math.max(0, flag.getEpisodes().indexOf(episode));
                 Result result = SiteApi.playerContent(key, flag.getFlag(), episode.getUrl());
-                String playbackKey = key + "@@@" + id;
+                String playbackKey = AudioHistory.buildPlaybackKey(key, id);
                 App.post(() -> start(activity, playbackKey, key, flag.getFlag(), vod.getName(), episode.getDisplayName(), result.hasArtwork() ? result.getArtwork() : vod.getPic(), flag.getEpisodes(), index, result, VodConfig.get().getSite(key).getTimeout(), result.getHeader()));
             } catch (Throwable e) {
                 App.post(() -> Notify.show(TextUtils.isEmpty(e.getMessage()) ? "音频加载失败" : e.getMessage()));
@@ -219,7 +221,7 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private static Flag selectFlag(String key, String id, Vod vod, String mark) {
-        History history = History.find(key + "@@@" + id);
+        History history = AudioHistory.find(key, id);
         String targetFlag = history == null ? "" : history.getVodFlag();
         if (!TextUtils.isEmpty(targetFlag)) {
             for (Flag flag : vod.getFlags()) if (targetFlag.equals(flag.getFlag())) return flag;
@@ -231,7 +233,7 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private static Episode selectEpisode(String key, String id, Flag flag, String mark) {
-        History history = History.find(key + "@@@" + id);
+        History history = AudioHistory.find(key, id);
         Episode episode = history == null ? null : flag.find(history.getVodRemarks(), false);
         if (episode != null) return episode;
         if (!TextUtils.isEmpty(mark)) episode = flag.find(mark, false);
@@ -280,6 +282,7 @@ public class AudioActivity extends PlaybackActivity {
         setCover();
         setMode(0, false);
         updateAudioToolState();
+        updateKeepState();
         super.initView(savedInstanceState);
         App.post(ticker);
     }
@@ -311,6 +314,7 @@ public class AudioActivity extends PlaybackActivity {
     protected void initEvent() {
         binding.minimize.setOnClickListener(view -> moveTaskToBack(true));
         binding.close.setOnClickListener(view -> closeAudio());
+        binding.keep.setOnClickListener(view -> onKeep());
         binding.play.setOnClickListener(view -> togglePlay());
         binding.prev.setOnClickListener(view -> playPrev(true));
         binding.next.setOnClickListener(view -> playNext(true));
@@ -379,6 +383,7 @@ public class AudioActivity extends PlaybackActivity {
         setText();
         setCover();
         updateAudioToolState();
+        updateKeepState();
         updatePlayIcon();
         updatePlaylistState();
         if (lyricEnabled) {
@@ -409,7 +414,10 @@ public class AudioActivity extends PlaybackActivity {
     protected void onStateChanged(int state) {
         binding.loading.setVisibility(state == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
         PlayerManager manager = player();
-        if (state == Player.STATE_READY && manager != null) manager.reset();
+        if (state == Player.STATE_READY && manager != null) {
+            manager.reset();
+            updateHistoryForTrack(manager);
+        }
         if (state == Player.STATE_ENDED && mode != 2) playNext(false);
         updatePlayIcon();
     }
@@ -457,7 +465,7 @@ public class AudioActivity extends PlaybackActivity {
         setText();
         setCover();
         updateAudioToolState();
-        updateHistoryForTrack();
+        updateKeepState();
         MediaMetadata metadata = buildAudioMetadata();
         startPlayer(getPlaybackKey(), target, target.shouldUseParse(), getTimeout(), metadata);
         manager.play();
@@ -717,6 +725,57 @@ public class AudioActivity extends PlaybackActivity {
         if (!isActivityAlive()) return;
         long duration = getPlayerDuration();
         AudioCommentDialog.create(getDisplayTitleText(), getDisplaySubtitleText(), duration).show(this);
+    }
+
+    private void onKeep() {
+        if (!canUseVodRecord()) return;
+        Keep keep = findCurrentKeep();
+        Notify.show(keep != null ? R.string.keep_del : R.string.keep_add);
+        if (keep != null) keep.delete();
+        else createKeep();
+        updateKeepState();
+        RefreshEvent.keep();
+    }
+
+    private void createKeep() {
+        Keep keep = new Keep();
+        keep.setKey(getPlaybackKey());
+        keep.setCid(VodConfig.getCid());
+        keep.setVodPic(getPic());
+        keep.setVodName(getTitleText());
+        keep.setSiteName(getSiteNameText());
+        keep.setCreateTime(System.currentTimeMillis());
+        keep.save();
+    }
+
+    private void updateKeep() {
+        if (!canUseVodRecord()) return;
+        String playbackKey = getPlaybackKey();
+        String siteKey = getSiteKey();
+        String vodId = getVodIdFromPlaybackKey();
+        String title = getTitleText();
+        String pic = getPic();
+        String siteName = getSiteNameText();
+        Task.execute(() -> {
+            Keep keep = findAudioKeep(playbackKey, siteKey, vodId);
+            if (keep == null) return;
+            if (!playbackKey.equals(keep.getKey())) {
+                keep.delete();
+                keep.setKey(playbackKey);
+            }
+            keep.setCid(VodConfig.getCid());
+            keep.setVodName(title);
+            keep.setVodPic(pic);
+            keep.setSiteName(siteName);
+            keep.save();
+        });
+    }
+
+    private void updateKeepState() {
+        boolean enable = canUseVodRecord();
+        binding.keep.setVisibility(enable ? View.VISIBLE : View.GONE);
+        binding.keep.setFocusable(enable);
+        if (enable) binding.keep.setImageResource(findCurrentKeep() == null ? R.drawable.ic_audio_keep_off : R.drawable.ic_audio_keep_on);
     }
 
     private void applyManualLyric(int request, LyricUtil.Option option, String title, String subtitle, long duration) {
@@ -1012,39 +1071,47 @@ public class AudioActivity extends PlaybackActivity {
         return lyrics == null || index < 0 || index >= lyrics.size() ? "" : lyrics.get(index).text;
     }
 
-    private void updateHistoryForTrack() {
-        if (Setting.isIncognito()) return;
-        if (episodes.isEmpty() || index < 0 || index >= episodes.size()) return;
-        Task.execute(() -> {
-            History history = History.find(getPlaybackKey());
-            if (history == null) return;
-            Episode episode = episodes.get(index);
-            history.setVodFlag(getFlag());
-            history.setVodRemarks(episode.getDisplayName());
-            history.setEpisodeUrl(episode.getUrl());
-            history.setPosition(C.TIME_UNSET);
-            history.setDuration(C.TIME_UNSET);
-            history.setCreateTime(System.currentTimeMillis());
-            history.save();
-        });
+    private void updateHistoryForTrack(PlayerManager manager) {
+        if (manager == null || manager.isReleased()) return;
+        if (!canUseVodRecord()) return;
+        AudioHistory.saveTrack(buildHistoryRecord(), manager.getPosition(), manager.getDuration());
+        updateKeep();
+    }
+
+    private AudioHistory.Record buildHistoryRecord() {
+        Episode episode = getCurrentEpisode();
+        String vodRemarks = episode == null ? getSubtitleText() : episode.getDisplayName();
+        String episodeUrl = episode == null ? "" : episode.getUrl();
+        return new AudioHistory.Record(getPlaybackKey(), getSiteKey(), getFlag(), getTitleText(), getPic(), vodRemarks, episodeUrl);
     }
 
     private void syncHistoryProgress(PlayerManager manager) {
-        if (Setting.isIncognito()) return;
+        if (!canUseVodRecord()) return;
         long position = manager.getPosition();
         long duration = manager.getDuration();
         if (position <= 0 || duration <= 0) return;
         long now = System.currentTimeMillis();
         if (now - lastHistorySync < 5000) return;
         lastHistorySync = now;
-        Task.execute(() -> {
-            History history = History.find(getPlaybackKey());
-            if (history == null) return;
-            history.setPosition(position);
-            history.setDuration(duration);
-            history.setCreateTime(now);
-            history.save();
-        });
+        AudioHistory.syncProgress(getPlaybackKey(), getSiteKey(), position, duration);
+    }
+
+    private Episode getCurrentEpisode() {
+        return episodes == null || episodes.isEmpty() || index < 0 || index >= episodes.size() ? null : episodes.get(index);
+    }
+
+    private boolean canUseVodRecord() {
+        return AudioHistory.canUse(getPlaybackKey(), getSiteKey());
+    }
+
+    private Keep findCurrentKeep() {
+        return findAudioKeep(getPlaybackKey(), getSiteKey(), getVodIdFromPlaybackKey());
+    }
+
+    private static Keep findAudioKeep(String playbackKey, String siteKey, String vodId) {
+        Keep keep = Keep.find(playbackKey);
+        if (keep == null && !TextUtils.isEmpty(siteKey) && !TextUtils.isEmpty(vodId)) keep = Keep.find(VodConfig.getCid(), AudioHistory.buildLegacyPlaybackKey(siteKey, vodId));
+        return keep;
     }
 
     @SuppressWarnings("unchecked")
@@ -1068,6 +1135,16 @@ public class AudioActivity extends PlaybackActivity {
 
     private String getSiteKey() {
         return Objects.toString(getIntent().getStringExtra(EXTRA_SITE_KEY), "");
+    }
+
+    private String getSiteNameText() {
+        Site site = VodConfig.get().getSite(getSiteKey());
+        String name = site == null ? "" : site.getName();
+        return TextUtils.isEmpty(name) ? getSiteKey() : name;
+    }
+
+    private String getVodIdFromPlaybackKey() {
+        return AudioHistory.getVodId(getPlaybackKey());
     }
 
     private String getFlag() {

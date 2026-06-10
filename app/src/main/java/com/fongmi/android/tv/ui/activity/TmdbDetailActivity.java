@@ -97,6 +97,7 @@ import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PiP;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
+import com.fongmi.android.tv.utils.TmdbEpisodeSorter;
 import com.fongmi.android.tv.utils.TmdbImageSaver;
 import com.fongmi.android.tv.utils.Traffic;
 import com.fongmi.android.tv.utils.Util;
@@ -1256,6 +1257,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         }
         vod = loadedVod;
         sourceVodName = loadedVod.getName();
+        TmdbEpisodeSorter.sort(vod);
         applyTmdbBundle(bundle);
         if (bundle != null) saveTmdbMatch(bundle.item());
         enrichVod();

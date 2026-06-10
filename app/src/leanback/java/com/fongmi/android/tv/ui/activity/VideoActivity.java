@@ -87,6 +87,7 @@ import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Sniffer;
 import com.fongmi.android.tv.utils.Task;
+import com.fongmi.android.tv.utils.TmdbEpisodeSorter;
 import com.fongmi.android.tv.utils.Traffic;
 import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.crawler.SpiderDebug;
@@ -594,6 +595,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private void setDetail(Vod item) {
         item.checkPic(getPic());
         item.checkName(getName());
+        if (isIntentTmdbPlayback()) TmdbEpisodeSorter.sort(item);
         mBinding.progressLayout.showContent();
         mBinding.name.setText(item.getName());
         mFlagAdapter.addAll(item.getFlags());
@@ -667,6 +669,11 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private boolean hasIntentTmdbVod() {
         return !TextUtils.isEmpty(getStringExtra("tmdb_vod_title")) || !TextUtils.isEmpty(getStringExtra("tmdb_vod_content")) || !TextUtils.isEmpty(getStringExtra("tmdb_vod_year")) || !TextUtils.isEmpty(getStringExtra("tmdb_vod_area")) || !TextUtils.isEmpty(getStringExtra("tmdb_vod_type")) || !TextUtils.isEmpty(getStringExtra("tmdb_vod_director")) || !TextUtils.isEmpty(getStringExtra("tmdb_vod_actor")) || !TextUtils.isEmpty(getStringExtra("tmdb_title")) || !TextUtils.isEmpty(getStringExtra("tmdb_overview"));
+    }
+
+    private boolean isIntentTmdbPlayback() {
+        ArrayList<String> values = getIntent().getStringArrayListExtra("tmdb_episode_titles");
+        return hasIntentTmdbVod() || values != null && !values.isEmpty();
     }
 
     private String getStringExtra(String key) {

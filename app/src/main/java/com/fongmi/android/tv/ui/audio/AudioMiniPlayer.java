@@ -25,7 +25,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.widget.NestedScrollView;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.media3.common.C;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
@@ -36,12 +35,10 @@ import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.bean.Episode;
-import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.player.engine.PlaySpec;
 import com.fongmi.android.tv.service.PlaybackService;
-import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.activity.AudioActivity;
 import com.fongmi.android.tv.utils.AudioUtil;
 import com.fongmi.android.tv.utils.ImgUtil;
@@ -67,6 +64,7 @@ public final class AudioMiniPlayer implements ServiceConnection {
     private static final int MINI_PLAYER_BOTTOM_MARGIN_DP = 28;
     private static final int MINI_PLAYER_BOTTOM_OBSTRUCTION_GAP_DP = 8;
     private static final int MINI_PLAYER_MAX_OBSTRUCTION_HEIGHT_DP = 112;
+    private static final long HISTORY_READY_CHECK_DELAY = 1000L;
     private static final String TITLE_PLAYLIST_DETAIL = "歌单详情";
     private static final String PREF_POSITIONED = "audio_mini_player_positioned";
     private static final String PREF_POSITION_X = "audio_mini_player_x";
@@ -74,6 +72,7 @@ public final class AudioMiniPlayer implements ServiceConnection {
     private static State state;
     private static boolean active;
 
+    private final Runnable historyReadyChecker = this::ensureHistoryForReady;
     private final Activity activity;
     private final Random random;
     private PlaybackService service;
@@ -101,6 +100,7 @@ public final class AudioMiniPlayer implements ServiceConnection {
     private boolean dragging;
     private boolean dragMoved;
     private String loadedPic;
+    private String savedHistoryTrack;
     private Insets systemInsets = Insets.NONE;
     private int playRequest;
 
@@ -116,12 +116,18 @@ public final class AudioMiniPlayer implements ServiceConnection {
     public static void activate(State target, PlaybackService service) {
         state = target;
         active = target != null;
-        if (service != null) service.setKeepAlive(active);
+        if (service == null) return;
+        service.setKeepAlive(active);
+        if (active) service.setAudioHistoryRecord(target.historyRecord());
+        else service.clearAudioHistoryRecord();
     }
 
     public static void deactivateForFull(PlaybackService service) {
         active = false;
-        if (service != null) service.setKeepAlive(false);
+        if (service == null) return;
+        service.syncAudioHistoryProgress(true);
+        service.clearAudioHistoryRecord();
+        service.setKeepAlive(false);
     }
 
     public void onResume() {
@@ -339,6 +345,8 @@ public final class AudioMiniPlayer implements ServiceConnection {
 
     private void unbind() {
         if (!bound) return;
+        syncHistoryProgress(true);
+        App.removeCallbacks(historyReadyChecker);
         detachPlayer();
         if (service != null) {
             service.removePlayerCallback(playerCallback);
@@ -486,13 +494,14 @@ public final class AudioMiniPlayer implements ServiceConnection {
         }
         state.result = cloneResult(target);
         state.resultIndex = state.index;
-        updateHistoryForTrack();
         MediaMetadata metadata = PlayerManager.buildMetadata(state.displayTitle(), state.displaySubtitle(), state.pic);
         if (!startPlayer(target, metadata)) {
             setLoading(false);
             return;
         }
         service.player().play();
+        service.setAudioHistoryRecord(buildHistoryRecord());
+        scheduleHistoryReadyCheck();
         setLoading(false);
     }
 
@@ -522,34 +531,53 @@ public final class AudioMiniPlayer implements ServiceConnection {
         return true;
     }
 
-    private void updateHistoryForTrack() {
-        if (Setting.isIncognito()) return;
-        if (state == null || state.episodes.isEmpty() || state.index < 0 || state.index >= state.episodes.size()) return;
-        State snapshot = state.copy();
-        Task.execute(() -> {
-            History history = History.find(snapshot.playbackKey);
-            if (history == null) return;
-            Episode episode = snapshot.episodes.get(snapshot.index);
-            history.setVodFlag(snapshot.flag);
-            history.setVodRemarks(episode.getDisplayName());
-            history.setEpisodeUrl(episode.getUrl());
-            history.setPosition(C.TIME_UNSET);
-            history.setDuration(C.TIME_UNSET);
-            history.setCreateTime(System.currentTimeMillis());
-            history.save();
-        });
+    private void updateHistoryForReady() {
+        PlayerManager manager = service == null ? null : service.player();
+        if (manager == null || manager.isReleased() || state == null || state.index != state.resultIndex) return;
+        savedHistoryTrack = currentHistoryTrack();
+        service.setAudioHistoryRecord(buildHistoryRecord());
+    }
+
+    private void ensureHistoryForReady() {
+        PlayerManager manager = service == null ? null : service.player();
+        if (manager == null || manager.isReleased() || manager.getPlaybackState() != Player.STATE_READY) return;
+        String track = currentHistoryTrack();
+        if (TextUtils.isEmpty(track) || TextUtils.equals(track, savedHistoryTrack)) return;
+        updateHistoryForReady();
+    }
+
+    private void syncHistoryProgress(boolean force) {
+        if (service != null) service.syncAudioHistoryProgress(force);
+    }
+
+    private AudioHistory.Record buildHistoryRecord() {
+        return state == null ? null : state.historyRecord();
+    }
+
+    private String currentHistoryTrack() {
+        return state == null || state.index != state.resultIndex ? "" : state.historyRecord().trackKey();
+    }
+
+    private void scheduleHistoryReadyCheck() {
+        App.post(historyReadyChecker, HISTORY_READY_CHECK_DELAY);
     }
 
     private void openFullPlayer() {
         if (state == null) return;
-        AudioActivity.startFromMini(activity, state.copy());
+        State copy = state.copy();
+        syncHistoryProgress(true);
+        AudioActivity.startFromMini(activity, copy);
     }
 
     private void close() {
+        syncHistoryProgress(true);
+        App.removeCallbacks(historyReadyChecker);
         active = false;
         state = null;
+        savedHistoryTrack = null;
         if (root != null) root.setVisibility(View.GONE);
         if (service != null) {
+            service.clearAudioHistoryRecord();
             service.setKeepAlive(false);
             service.setNavigationCallback(null, null);
             service.shutdown();
@@ -579,12 +607,15 @@ public final class AudioMiniPlayer implements ServiceConnection {
         service.setKeepAlive(true);
         service.setNavigationCallback(navigationCallback, state.playbackKey);
         service.addPlayerCallback(playerCallback);
+        service.setAudioHistoryRecord(buildHistoryRecord());
         attachPlayer();
         updateViews();
+        updateHistoryForReady();
     }
 
     @Override
     public void onServiceDisconnected(ComponentName name) {
+        App.removeCallbacks(historyReadyChecker);
         detachPlayer();
         service = null;
     }
@@ -592,12 +623,15 @@ public final class AudioMiniPlayer implements ServiceConnection {
     private final Player.Listener playerListener = new Player.Listener() {
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
+            if (!isPlaying) syncHistoryProgress(true);
             updateViews();
         }
 
         @Override
         public void onPlaybackStateChanged(int playbackState) {
             setLoading(playbackState == Player.STATE_BUFFERING);
+            if (playbackState == Player.STATE_READY) updateHistoryForReady();
+            if (playbackState == Player.STATE_ENDED) syncHistoryProgress(true);
         }
     };
 
@@ -686,6 +720,17 @@ public final class AudioMiniPlayer implements ServiceConnection {
         public String subtitle() {
             if (!episodes.isEmpty() && index >= 0 && index < episodes.size()) return episodes.get(index).getDisplayName();
             return fallbackSubtitle;
+        }
+
+        public Episode currentEpisode() {
+            return episodes.isEmpty() || index < 0 || index >= episodes.size() ? null : episodes.get(index);
+        }
+
+        private AudioHistory.Record historyRecord() {
+            Episode episode = currentEpisode();
+            String vodRemarks = episode == null ? subtitle() : episode.getDisplayName();
+            String episodeUrl = episode == null ? "" : episode.getUrl();
+            return new AudioHistory.Record(playbackKey, siteKey, flag, title, pic, vodRemarks, episodeUrl);
         }
 
         private DisplayText displayText() {
