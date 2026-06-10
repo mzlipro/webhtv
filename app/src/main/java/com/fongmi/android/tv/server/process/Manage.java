@@ -4,12 +4,15 @@ import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
+import com.fongmi.android.tv.api.config.WallConfig;
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Backup;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Device;
+import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.SyncOptions;
+import com.fongmi.android.tv.event.ServerEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.impl.Process;
@@ -17,6 +20,7 @@ import com.fongmi.android.tv.service.ManageService;
 import com.fongmi.android.tv.setting.CustomCspSetting;
 import com.fongmi.android.tv.setting.ProxySetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.LoginStateSync;
 import com.fongmi.android.tv.utils.ProgressRequestBody;
 import com.fongmi.android.tv.utils.ScanTask;
 import com.fongmi.android.tv.utils.SyncFiles;
@@ -68,7 +72,7 @@ public class Manage implements Process {
             if (url.equals("/manage/background/settings")) return backgroundSettings(session);
             if (url.equals("/manage/devices")) return devices(session.getParms());
             if (url.equals("/manage/remote/ping")) return remotePing(session.getParms());
-            if (url.equals("/manage/action")) return forwardTo(session, "/action");
+            if (url.equals("/manage/action")) return action(session);
             if (url.equals("/manage/remote/file")) return remoteFile(session.getParms());
             if (url.equals("/manage/remote/archive")) return remoteArchive(session.getParms());
             if (url.equals("/manage/remote/upload")) return remoteUpload(session.getParms(), files);
@@ -83,7 +87,19 @@ public class Manage implements Process {
                 case "/manage/sync/detect" -> detectSyncPaths();
                 case "/manage/sync/start" -> syncStart(session.getParms());
                 case "/manage/file/archive" -> fileArchive(session.getParms());
+                case "/manage/file/tree" -> fileTree(session.getParms());
+                case "/manage/configs" -> configs(session.getParms());
+                case "/manage/config/use" -> configUse(session.getParms());
+                case "/manage/config/delete" -> configDelete(session.getParms());
+                case "/manage/login-state" -> loginState();
+                case "/manage/login-state/file" -> loginStateFile(session.getParms());
+                case "/manage/login-state/learn" -> loginStateLearn(session.getParms());
+                case "/manage/login-state/paths" -> loginStatePaths(session.getParms());
+                case "/manage/login-state/confirm" -> loginStateConfirm();
+                case "/manage/login-state/tree" -> loginStateTree(session.getParms());
                 case "/manage/proxy" -> proxy(session.getParms());
+                case "/manage/proxy/suggest/sites" -> proxySuggestSites();
+                case "/manage/proxy/suggest" -> proxySuggest(session.getParms());
                 case "/manage/csp/page" -> cspPage(session.getParms());
                 case "/manage/csp" -> csp(session.getParms());
                 default -> Nano.error(Status.NOT_FOUND, "Not found");
@@ -178,6 +194,24 @@ public class Manage implements Process {
             Status status = response.isSuccessful() ? Status.OK : Status.lookup(response.code());
             return NanoHTTPD.newFixedLengthResponse(status == null ? Status.INTERNAL_ERROR : status, response.header("Content-Type", "text/plain; charset=utf-8"), text);
         }
+    }
+
+    private Response action(IHTTPSession session) throws IOException {
+        Response forwarded = forwardTo(session, "/action");
+        if (forwarded != null) return forwarded;
+        Map<String, String> params = session.getParms();
+        String action = params.get("do");
+        if ("search".equals(action)) {
+            String word = params.get("word");
+            if (!TextUtils.isEmpty(word)) ServerEvent.search(word);
+            return Nano.ok();
+        }
+        if ("push".equals(action)) {
+            String playUrl = params.get("url");
+            if (!TextUtils.isEmpty(playUrl)) ServerEvent.push(playUrl);
+            return Nano.ok();
+        }
+        return Nano.ok();
     }
 
     private Response remoteFile(Map<String, String> params) throws IOException {
@@ -278,6 +312,114 @@ public class Manage implements Process {
         return json(object);
     }
 
+    private Response fileTree(Map<String, String> params) throws Exception {
+        String path = cleanRelativePath(params.getOrDefault("path", ""));
+        File root = Path.root().getCanonicalFile();
+        File dir = path.isEmpty() ? root : new File(root, path).getCanonicalFile();
+        if (!inside(root, dir) || !dir.isDirectory()) return Nano.error(Status.NOT_FOUND, "Directory not found");
+        JsonObject object = new JsonObject();
+        object.addProperty("path", path);
+        object.addProperty("parent", parentOf(root, dir));
+        JsonArray dirs = new JsonArray();
+        File[] files = dir.listFiles(file -> file.isDirectory() && !file.getName().startsWith("."));
+        if (files != null) Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+        int count = 0;
+        for (File file : files == null ? new File[0] : files) {
+            if (count++ >= TREE_LIMIT) break;
+            JsonObject item = new JsonObject();
+            item.addProperty("name", file.getName());
+            item.addProperty("path", relativeTo(root, file));
+            item.addProperty("children", hasVisibleDirs(file));
+            dirs.add(item);
+        }
+        object.add("dirs", dirs);
+        object.addProperty("truncated", files != null && files.length > TREE_LIMIT);
+        return json(object);
+    }
+
+    private Response configs(Map<String, String> params) {
+        if (params.containsKey("url")) {
+            int type = intValue(params.get("type"), 0);
+            String url = params.getOrDefault("url", "").trim();
+            String name = params.getOrDefault("name", "").trim();
+            if (TextUtils.isEmpty(url)) return Nano.error(Status.BAD_REQUEST, "Missing url");
+            Config config = Config.find(url, type).name(name);
+            config.save();
+        }
+        JsonObject object = new JsonObject();
+        JsonArray items = new JsonArray();
+        for (int type = 0; type <= 2; type++) {
+            for (Config config : Config.getAll(type)) items.add(configObject(config, false));
+            Config current = currentConfig(type);
+            if (!current.isEmpty() && !containsConfig(items, current)) items.add(configObject(current, true));
+        }
+        object.add("items", items);
+        return json(object);
+    }
+
+    private Response configUse(Map<String, String> params) {
+        int type = intValue(params.get("type"), 0);
+        String url = params.getOrDefault("url", "").trim();
+        if (TextUtils.isEmpty(url)) return Nano.error(Status.BAD_REQUEST, "Missing url");
+        Config config = Config.find(url, type);
+        if (config.isEmpty()) return Nano.error(Status.NOT_FOUND, "Config not found");
+        switch (type) {
+            case 1 -> LiveConfig.load(config, new Callback());
+            case 2 -> WallConfig.load(config, new Callback());
+            default -> VodConfig.load(config, new Callback());
+        }
+        return configs(java.util.Collections.emptyMap());
+    }
+
+    private Response configDelete(Map<String, String> params) {
+        int type = intValue(params.get("type"), 0);
+        String url = params.getOrDefault("url", "").trim();
+        if (TextUtils.isEmpty(url)) return Nano.error(Status.BAD_REQUEST, "Missing url");
+        Config.find(url, type).delete();
+        return configs(java.util.Collections.emptyMap());
+    }
+
+    private JsonObject configObject(Config config, boolean forceActive) {
+        JsonObject item = new JsonObject();
+        item.addProperty("type", config.getType());
+        item.addProperty("typeName", configTypeName(config.getType()));
+        item.addProperty("name", config.getName());
+        item.addProperty("url", config.getUrl());
+        item.addProperty("desc", config.getDesc());
+        item.addProperty("time", config.getTime());
+        item.addProperty("active", forceActive || isCurrentConfig(config));
+        return item;
+    }
+
+    private boolean containsConfig(JsonArray items, Config config) {
+        for (int i = 0; i < items.size(); i++) {
+            JsonObject item = items.get(i).getAsJsonObject();
+            if (item.get("type").getAsInt() == config.getType() && item.get("url").getAsString().equals(config.getUrl())) return true;
+        }
+        return false;
+    }
+
+    private boolean isCurrentConfig(Config config) {
+        Config current = currentConfig(config.getType());
+        return current.getUrl().equals(config.getUrl());
+    }
+
+    private Config currentConfig(int type) {
+        return switch (type) {
+            case 1 -> LiveConfig.get().getConfig();
+            case 2 -> WallConfig.get().getConfig();
+            default -> VodConfig.get().getConfig();
+        };
+    }
+
+    private String configTypeName(int type) {
+        return switch (type) {
+            case 1 -> "直播";
+            case 2 -> "壁纸";
+            default -> "影视";
+        };
+    }
+
     private Response syncTree(Map<String, String> params) throws Exception {
         String path = SyncFiles.normalize(params.get("path"));
         File root = Path.root().getCanonicalFile();
@@ -295,6 +437,7 @@ public class Manage implements Process {
             JsonObject item = new JsonObject();
             item.addProperty("name", file.getName());
             item.addProperty("path", relativeTo(root, file));
+            item.addProperty("children", hasVisibleDirs(file));
             dirs.add(item);
         }
         object.add("dirs", dirs);
@@ -374,6 +517,12 @@ public class Manage implements Process {
         return text.contains("/") || text.contains("\\") ? text : "";
     }
 
+    private String cleanRelativePath(String value) {
+        String path = value == null ? "" : value.trim();
+        while (path.startsWith("/")) path = path.substring(1);
+        return path;
+    }
+
     private String relativeLocalPath(File file) {
         try {
             if (file == null) return "";
@@ -404,9 +553,11 @@ public class Manage implements Process {
         SyncOptions options = SyncOptions.objectFrom(params.get("options"));
         if (params.containsKey("paths")) options.paths(params.get("paths"));
         SyncFiles.Archive archive = null;
+        LoginStateSync.Archive loginArchive = null;
         try {
             if (!pull && options.isSpider()) archive = SyncFiles.createArchive(SyncFiles.getPaths(options.getPaths()));
-            RequestBody body = buildSyncBody(pull, options, archive);
+            if (!pull && options.isLoginState()) loginArchive = LoginStateSync.createArchive();
+            RequestBody body = buildSyncBody(pull, options, archive, loginArchive);
             String remote = device.replaceAll("/+$", "") + "/action?do=sync&mode=" + (pull ? "2" : "1") + "&type=backup";
             SpiderDebug.log("sync", "manage start direction=%s device=%s options=%s archive=%s", pull ? "pull" : "push", device, options, archive == null ? "none" : archive.getFile().getAbsolutePath());
             try (okhttp3.Response response = OkHttp.client(Constant.TIMEOUT_SYNC_TRANSFER).newCall(new Request.Builder().url(remote).post(body).build()).execute()) {
@@ -425,13 +576,19 @@ public class Manage implements Process {
                 object.addProperty("rawSize", archive.getRawSize());
                 object.addProperty("zipSize", archive.getZipSize());
             }
+            if (loginArchive != null) {
+                object.addProperty("loginFiles", loginArchive.getCount());
+                object.addProperty("loginRawSize", loginArchive.getRawSize());
+                object.addProperty("loginZipSize", loginArchive.getZipSize());
+            }
             return json(object);
         } finally {
             if (archive != null) archive.delete();
+            if (loginArchive != null) loginArchive.delete();
         }
     }
 
-    private RequestBody buildSyncBody(boolean pull, SyncOptions options, SyncFiles.Archive archive) {
+    private RequestBody buildSyncBody(boolean pull, SyncOptions options, SyncFiles.Archive archive, LoginStateSync.Archive loginArchive) {
         if (pull) {
             FormBody.Builder body = new FormBody.Builder();
             body.add("options", options.toString());
@@ -439,7 +596,7 @@ public class Manage implements Process {
             body.add("device", Device.get().toString());
             return body.build();
         }
-        if (archive == null) {
+        if (archive == null && loginArchive == null) {
             FormBody.Builder body = new FormBody.Builder();
             body.add("options", options.toString());
             body.add("force", "false");
@@ -450,8 +607,76 @@ public class Manage implements Process {
         body.addFormDataPart("options", options.toString());
         body.addFormDataPart("force", "false");
         body.addFormDataPart("backup", Backup.create(options).toString());
-        body.addFormDataPart(SyncFiles.PART_NAME, archive.getFile().getName(), new ProgressRequestBody(archive.getFile(), ZIP, null));
+        if (archive != null) body.addFormDataPart(SyncFiles.PART_NAME, archive.getFile().getName(), new ProgressRequestBody(archive.getFile(), ZIP, null));
+        if (loginArchive != null) body.addFormDataPart(LoginStateSync.PART_NAME, loginArchive.getFile().getName(), new ProgressRequestBody(loginArchive.getFile(), ZIP, null));
         return body.build();
+    }
+
+    private Response loginState() {
+        return json(loginStateObject());
+    }
+
+    private Response loginStateLearn(Map<String, String> params) {
+        String action = params.getOrDefault("action", "begin");
+        JsonObject object;
+        if ("finish".equalsIgnoreCase(action)) {
+            LoginStateSync.LearnResult result = LoginStateSync.finishLearning();
+            object = loginStateObject();
+            object.add("selectedNow", array(result.getSelected()));
+            object.add("pendingNow", array(result.getPending()));
+            object.addProperty("finished", result.isLearned());
+        } else {
+            LoginStateSync.beginLearning();
+            object = loginStateObject();
+            object.addProperty("started", true);
+        }
+        return json(object);
+    }
+
+    private Response loginStateFile(Map<String, String> params) throws IOException {
+        String path = params.get("path");
+        if (TextUtils.isEmpty(path)) return Nano.error(Status.BAD_REQUEST, "Missing path");
+        if (params.containsKey("content")) LoginStateSync.write(path, params.get("content"));
+        JsonObject object = new JsonObject();
+        object.addProperty("path", LoginStateSync.normalizePath(path));
+        object.addProperty("displayPath", LoginStateSync.displayPath(path));
+        object.addProperty("content", LoginStateSync.read(path));
+        return json(object);
+    }
+
+    private Response loginStatePaths(Map<String, String> params) {
+        if (params.containsKey("paths")) LoginStateSync.savePaths(Arrays.asList(params.get("paths").split("[\\r\\n]+")));
+        return loginState();
+    }
+
+    private Response loginStateTree(Map<String, String> params) {
+        LoginStateSync.Tree tree = LoginStateSync.tree(params.getOrDefault("path", ""));
+        JsonObject object = new JsonObject();
+        object.addProperty("path", tree.getPath());
+        object.addProperty("parent", tree.getParent());
+        object.addProperty("valid", tree.isValid());
+        object.add("items", App.gson().toJsonTree(tree.getItems()));
+        return json(object);
+    }
+
+    private Response loginStateConfirm() {
+        LoginStateSync.confirmPending();
+        return loginState();
+    }
+
+    private JsonObject loginStateObject() {
+        List<String> learned = LoginStateSync.learnedPaths();
+        List<String> pending = LoginStateSync.pendingPaths();
+        JsonObject object = new JsonObject();
+        object.addProperty("learning", LoginStateSync.hasLearningSnapshot());
+        object.addProperty("learnedCount", learned.size());
+        object.addProperty("pendingCount", pending.size());
+        object.add("learned", array(learned));
+        object.add("pending", array(pending));
+        object.add("states", App.gson().toJsonTree(LoginStateSync.pathStates(learned)));
+        object.add("findings", App.gson().toJsonTree(LoginStateSync.findings()));
+        object.addProperty("pathsText", LoginStateSync.pathsText(learned));
+        return object;
     }
 
     private Response proxy(Map<String, String> params) {
@@ -471,6 +696,48 @@ public class Manage implements Process {
         object.addProperty("count", ProxySetting.count());
         object.addProperty("valid", ProxySetting.isValidRules(Setting.getShellProxyRules(), Setting.getShellProxyUrl()));
         return json(object);
+    }
+
+    private Response proxySuggestSites() {
+        JsonObject object = new JsonObject();
+        JsonArray array = new JsonArray();
+        String homeKey = VodConfig.get().getHome().getKey();
+        for (Site site : VodConfig.get().getSites()) {
+            if (site.isEmpty()) continue;
+            JsonObject item = new JsonObject();
+            item.addProperty("key", site.getKey());
+            item.addProperty("name", TextUtils.isEmpty(site.getName()) ? site.getKey() : site.getName());
+            item.addProperty("home", site.getKey().equals(homeKey));
+            array.add(item);
+        }
+        object.add("sites", array);
+        object.addProperty("count", array.size());
+        return json(object);
+    }
+
+    private Response proxySuggest(Map<String, String> params) {
+        String key = params.getOrDefault("key", "");
+        boolean all = bool(params.get("all"), false) || "all".equalsIgnoreCase(key);
+        List<Site> sites = VodConfig.get().getSites().stream().filter(site -> !site.isEmpty()).toList();
+        LinkedHashSet<String> hosts = new LinkedHashSet<>();
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        if (all) {
+            for (Site site : sites) addProxySuggestion(site, hosts, urls);
+        } else {
+            Site site = sites.stream().filter(item -> item.getKey().equals(key)).findFirst().orElse(VodConfig.get().getHome());
+            if (!site.isEmpty()) addProxySuggestion(site, hosts, urls);
+        }
+        JsonObject object = new JsonObject();
+        object.add("hosts", array(hosts));
+        object.add("urls", array(urls));
+        object.addProperty("count", hosts.size());
+        return json(object);
+    }
+
+    private void addProxySuggestion(Site site, LinkedHashSet<String> hosts, LinkedHashSet<String> urls) {
+        ProxySetting.Suggestion suggestion = ProxySetting.suggest(site);
+        hosts.addAll(suggestion.hosts());
+        urls.addAll(suggestion.urls());
     }
 
     private Response csp(Map<String, String> params) throws Exception {
@@ -527,6 +794,14 @@ public class Manage implements Process {
         return "1".equals(value) || "true".equalsIgnoreCase(value) || "on".equalsIgnoreCase(value);
     }
 
+    private int intValue(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
     private Response json(JsonObject object) {
         return NanoHTTPD.newFixedLengthResponse(Status.OK, "application/json; charset=utf-8", object.toString());
     }
@@ -535,6 +810,11 @@ public class Manage implements Process {
         String rootPath = root.getCanonicalPath();
         String filePath = file.getCanonicalPath();
         return filePath.equals(rootPath) || filePath.startsWith(rootPath + File.separator);
+    }
+
+    private boolean hasVisibleDirs(File dir) {
+        File[] files = dir.listFiles(file -> file.isDirectory() && !file.getName().startsWith("."));
+        return files != null && files.length > 0;
     }
 
     private String relativeTo(File root, File file) throws Exception {
