@@ -877,7 +877,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (isCinemaMode()) colors = ThemeColors.cinema();
         binding.root.setBackgroundColor(colors.background);
         binding.hero.setBackgroundColor(colors.background);
-        binding.backdropFill.setAlpha(isCinemaMode() ? 0.9f : lightTheme ? 0.35f : 0.5f);
+        binding.backdropFill.setAlpha(isCinemaMode() ? 0.9f : 1f);
         binding.backdrop.setAlpha(isCinemaMode() ? 0.24f : lightTheme ? 0.92f : 1f);
         binding.backdropShade.setBackground(isCinemaMode() ? cinemaBackdropShade() : colorDrawable(colors.backdropShade));
         setCard(binding.contentPanel, colors.panel, colors.line);
@@ -1583,13 +1583,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             return;
         }
         ImgUtil.load(title, image, binding.backdropFill);
-        if (hasBackdrop) {
-            binding.backdrop.setVisibility(View.VISIBLE);
-            ImgUtil.load(title, image, binding.backdrop, false);
-        } else {
-            binding.backdrop.setVisibility(View.GONE);
-            ImgUtil.clear(binding.backdrop);
-        }
+        binding.backdrop.setVisibility(View.GONE);
+        ImgUtil.clear(binding.backdrop);
     }
 
     private String tmdbBackdropUrl() {
@@ -5783,7 +5778,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         static ThemeColors dark() {
             return new ThemeColors(
                     0xFF0F141A,
-                    0xD9141B23,
+                    0xA6141B23,
                     0xFF2B3743,
                     0x332B3743,
                     0x6630A86B,
@@ -5795,14 +5790,14 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                     0xE6FFFFFF,
                     0xFF7EE7A2,
                     0xFF2CC56F,
-                    0x7A0F141A
+                    0x180F141A
             );
         }
 
         static ThemeColors light() {
             return new ThemeColors(
                     0xFFF3F6F9,
-                    0xCCFFFFFF,
+                    0xAFFFFFFF,
                     0xFFE7EDF3,
                     0xFFEAF0F5,
                     0xFFE5F7EC,
@@ -5814,7 +5809,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                     0xE612202D,
                     0xFF1D8F5A,
                     0xFF20B866,
-                    0x4DF7FAFC
+                    0x00F7FAFC
             );
         }
 

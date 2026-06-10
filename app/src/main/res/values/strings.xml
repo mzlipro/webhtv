@@ -690,6 +690,7 @@
     <string name="search_result_all">Search results for %1$s</string>
     <string name="search_result_current">Current site search for %1$s</string>
     <string name="search_result_group">%1$s search for %2$s</string>
+    <string name="search_result_meta">Type: %1$s</string>
     <string name="detail_tmdb_searching">Searching TMDB...</string>
     <string name="detail_tmdb_loading_detail">Loading TMDB details...</string>
     <string name="detail_tmdb_search_hint">Search title</string>

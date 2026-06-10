@@ -16,6 +16,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -817,7 +818,16 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         if (group != null) {
             group.setVisible(canFilterGroup());
             group.setTitle(TextUtils.isEmpty(mFilterGroup) ? getString(R.string.search_scope_all) : mFilterGroup);
+            tintToolbarActionText(R.id.action_group);
         }
+    }
+
+    private void tintToolbarActionText(int id) {
+        ViewGroup toolbar = mBinding.toolbar;
+        toolbar.post(() -> {
+            View action = toolbar.findViewById(id);
+            if (action instanceof TextView textView) textView.setTextColor(Color.WHITE);
+        });
     }
 
     @Override

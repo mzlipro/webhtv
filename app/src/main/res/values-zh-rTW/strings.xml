@@ -685,6 +685,7 @@
     <string name="search_result_all">%1$s 的搜尋結果</string>
     <string name="search_result_current">目前站搜尋：%1$s</string>
     <string name="search_result_group">%1$s 搜尋：%2$s</string>
+    <string name="search_result_meta">類型: %1$s</string>
     <string name="detail_tmdb_searching">正在搜尋 TMDB...</string>
     <string name="detail_tmdb_loading_detail">正在載入 TMDB 詳情...</string>
     <string name="detail_tmdb_search_hint">搜尋標題</string>

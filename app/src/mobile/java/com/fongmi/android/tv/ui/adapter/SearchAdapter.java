@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.ui.adapter;
 
+import android.content.Context;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -9,6 +10,7 @@ import android.widget.ImageView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.databinding.AdapterSearchBinding;
 import com.fongmi.android.tv.databinding.AdapterSearchGridBinding;
@@ -24,8 +26,10 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     public static final int VIEW_TYPE_LIST = 1;
     public static final int VIEW_TYPE_GRID = 2;
     private static final int LIST_NAME_MAX = 120;
+    private static final int LIST_META_MAX = 96;
     private static final int GRID_NAME_MAX = 48;
     private static final int REMARK_MAX = 40;
+    private static final int META_PART_MAX = 24;
     private static final int SITE_MAX = 24;
     private static final int YEAR_MAX = 8;
     public static final int GRID_MIN_WIDTH_DP = 72;
@@ -234,6 +238,27 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         return builder.toString();
     }
 
+    private static String listMeta(Vod item, Context context) {
+        List<String> parts = new ArrayList<>();
+        addMetaPart(parts, item.getTypeName());
+        addMetaPart(parts, item.getArea());
+        addMetaPart(parts, item.getYear());
+        addMetaPart(parts, item.getRemarks());
+        if (parts.isEmpty()) return "";
+        String meta = TextUtils.join(" / ", parts);
+        return displayText(hasStructuredMeta(item) ? context.getString(R.string.search_result_meta, meta) : meta, LIST_META_MAX);
+    }
+
+    private static boolean hasStructuredMeta(Vod item) {
+        return !TextUtils.isEmpty(item.getTypeName()) || !TextUtils.isEmpty(item.getArea()) || !TextUtils.isEmpty(item.getYear());
+    }
+
+    private static void addMetaPart(List<String> parts, String text) {
+        String part = displayText(text, META_PART_MAX);
+        if (TextUtils.isEmpty(part) || parts.contains(part)) return;
+        parts.add(part);
+    }
+
     @Override
     public int getItemViewType(int position) {
         return isGrid() ? VIEW_TYPE_GRID : VIEW_TYPE_LIST;
@@ -315,7 +340,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         private void bind(Vod item) {
             String name = displayName(item, LIST_NAME_MAX);
             String site = displayText(item.getSiteName(), SITE_MAX);
-            String remark = displayText(item.getRemarks(), REMARK_MAX);
+            String remark = listMeta(item, binding.remark.getContext());
             binding.name.setText(name);
             binding.site.setText(site);
             binding.remark.setText(remark);
