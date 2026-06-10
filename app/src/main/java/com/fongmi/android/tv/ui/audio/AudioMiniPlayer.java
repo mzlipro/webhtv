@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.graphics.Rect;
 import android.os.IBinder;
 import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
@@ -14,17 +15,21 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.Insets;
+import androidx.core.widget.NestedScrollView;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
@@ -60,6 +65,9 @@ public final class AudioMiniPlayer implements ServiceConnection {
     private static final int MINI_PLAYER_MAX_WIDTH_DP = 520;
     private static final int MINI_PLAYER_SIDE_MARGIN_DP = 16;
     private static final int MINI_PLAYER_BOTTOM_MARGIN_DP = 28;
+    private static final int MINI_PLAYER_BOTTOM_OBSTRUCTION_GAP_DP = 8;
+    private static final int MINI_PLAYER_MAX_OBSTRUCTION_HEIGHT_DP = 112;
+    private static final String TITLE_PLAYLIST_DETAIL = "歌单详情";
     private static final String PREF_POSITIONED = "audio_mini_player_positioned";
     private static final String PREF_POSITION_X = "audio_mini_player_x";
     private static final String PREF_POSITION_Y = "audio_mini_player_y";
@@ -93,6 +101,7 @@ public final class AudioMiniPlayer implements ServiceConnection {
     private boolean dragging;
     private boolean dragMoved;
     private String loadedPic;
+    private Insets systemInsets = Insets.NONE;
     private int playRequest;
 
     public AudioMiniPlayer(Activity activity) {
@@ -163,26 +172,76 @@ public final class AudioMiniPlayer implements ServiceConnection {
     }
 
     private void applyInsets() {
+        root.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> updateWindowBounds());
+        if (root.getParent() instanceof View) {
+            ((View) root.getParent()).addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> updateWindowBounds());
+        }
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
-            int width = Math.max(0, ((View) view.getParent()).getWidth());
-            Insets system = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-            int side = ResUtil.dp2px(MINI_PLAYER_SIDE_MARGIN_DP);
-            int maxWidth = ResUtil.dp2px(MINI_PLAYER_MAX_WIDTH_DP);
-            dragLeft = side + system.left;
-            dragTop = side + system.top;
-            dragRight = side + system.right;
-            dragBottom = ResUtil.dp2px(MINI_PLAYER_BOTTOM_MARGIN_DP) + system.bottom;
-            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
-            params.leftMargin = dragLeft;
-            params.rightMargin = dragRight;
-            params.bottomMargin = dragBottom;
-            if (width > 0) params.width = Math.min(maxWidth, Math.max(0, width - dragLeft - dragRight));
-            view.setLayoutParams(params);
-            view.post(this::applySavedPosition);
+            systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            updateWindowBounds();
             return insets;
         });
         ViewCompat.requestApplyInsets(root);
         root.post(() -> ViewCompat.requestApplyInsets(root));
+    }
+
+    private void updateWindowBounds() {
+        if (root == null || !(root.getParent() instanceof View)) return;
+        View parent = (View) root.getParent();
+        int width = Math.max(0, parent.getWidth());
+        int side = ResUtil.dp2px(MINI_PLAYER_SIDE_MARGIN_DP);
+        int maxWidth = ResUtil.dp2px(MINI_PLAYER_MAX_WIDTH_DP);
+        int bottomObstruction = findBottomObstruction(parent);
+        dragLeft = side + systemInsets.left;
+        dragTop = side + systemInsets.top;
+        dragRight = side + systemInsets.right;
+        dragBottom = ResUtil.dp2px(MINI_PLAYER_BOTTOM_MARGIN_DP) + systemInsets.bottom + bottomObstruction;
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) root.getLayoutParams();
+        int targetWidth = width > 0 ? Math.min(maxWidth, Math.max(0, width - dragLeft - dragRight)) : params.width;
+        boolean changed = params.leftMargin != dragLeft || params.rightMargin != dragRight || params.bottomMargin != dragBottom || params.width != targetWidth;
+        if (changed) {
+            params.leftMargin = dragLeft;
+            params.rightMargin = dragRight;
+            params.bottomMargin = dragBottom;
+            params.width = targetWidth;
+            root.setLayoutParams(params);
+        }
+        root.post(this::applySavedPosition);
+    }
+
+    private int findBottomObstruction(View parent) {
+        if (!(parent instanceof ViewGroup)) return 0;
+        Rect parentRect = new Rect();
+        if (!parent.getGlobalVisibleRect(parentRect)) return 0;
+        int maxHeight = ResUtil.dp2px(MINI_PLAYER_MAX_OBSTRUCTION_HEIGHT_DP);
+        int threshold = systemInsets.bottom + ResUtil.dp2px(MINI_PLAYER_BOTTOM_OBSTRUCTION_GAP_DP);
+        return findBottomObstruction((ViewGroup) parent, parentRect, maxHeight, threshold);
+    }
+
+    private int findBottomObstruction(ViewGroup group, Rect parentRect, int maxHeight, int threshold) {
+        if (isScrollableContent(group)) return 0;
+        int result = 0;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child == root || !child.isShown() || child.getAlpha() <= 0f) continue;
+            result = Math.max(result, getBottomObstructionHeight(child, parentRect, maxHeight, threshold));
+            if (child instanceof ViewGroup) result = Math.max(result, findBottomObstruction((ViewGroup) child, parentRect, maxHeight, threshold));
+        }
+        return result;
+    }
+
+    private int getBottomObstructionHeight(View view, Rect parentRect, int maxHeight, int threshold) {
+        if (view.getHeight() <= 0 || view.getHeight() > maxHeight) return 0;
+        Rect rect = new Rect();
+        if (!view.getGlobalVisibleRect(rect)) return 0;
+        if (rect.width() < parentRect.width() / 3) return 0;
+        int bottomGap = Math.max(0, parentRect.bottom - rect.bottom);
+        if (bottomGap > threshold) return 0;
+        return Math.min(rect.height(), maxHeight);
+    }
+
+    private boolean isScrollableContent(View view) {
+        return view instanceof RecyclerView || view instanceof NestedScrollView || view instanceof ScrollView || view instanceof HorizontalScrollView;
     }
 
     private boolean startDrag(View view) {
@@ -294,6 +353,7 @@ public final class AudioMiniPlayer implements ServiceConnection {
         if (root == null) return;
         if (isActive()) {
             root.setVisibility(View.VISIBLE);
+            updateWindowBounds();
             root.setAlpha(0f);
             root.setScaleX(0.94f);
             root.setScaleY(0.94f);
@@ -308,8 +368,10 @@ public final class AudioMiniPlayer implements ServiceConnection {
         if (root == null || !isActive()) return;
         PlayerManager manager = service == null ? null : service.player();
         boolean playing = manager != null && !manager.isReleased() && manager.isPlaying();
-        title.setText(state.title);
-        subtitle.setText(state.subtitle());
+        DisplayText text = state.displayText();
+        title.setText(text.title);
+        subtitle.setText(text.subtitle);
+        subtitle.setVisibility(TextUtils.isEmpty(text.subtitle) ? View.GONE : View.VISIBLE);
         status.setText(loading ? "正在加载" : playing ? "正在播放" : "已暂停");
         play.setImageResource(playing ? R.drawable.ic_audio_pause : R.drawable.ic_audio_play);
         float enabled = state.episodes.size() > 1 ? 1f : 0.45f;
@@ -325,8 +387,8 @@ public final class AudioMiniPlayer implements ServiceConnection {
             cover.setImageResource(R.drawable.ic_audio_note);
             backdrop.setImageResource(R.drawable.wallpaper_4);
         } else {
-            ImgUtil.load(state.title, state.pic, cover);
-            ImgUtil.load(state.title, state.pic, backdrop);
+            ImgUtil.load(state.displayTitle(), state.pic, cover);
+            ImgUtil.load(state.displayTitle(), state.pic, backdrop);
         }
     }
 
@@ -425,7 +487,7 @@ public final class AudioMiniPlayer implements ServiceConnection {
         state.result = cloneResult(target);
         state.resultIndex = state.index;
         updateHistoryForTrack();
-        MediaMetadata metadata = PlayerManager.buildMetadata(state.title, state.subtitle(), state.pic);
+        MediaMetadata metadata = PlayerManager.buildMetadata(state.displayTitle(), state.displaySubtitle(), state.pic);
         if (!startPlayer(target, metadata)) {
             setLoading(false);
             return;
@@ -626,6 +688,18 @@ public final class AudioMiniPlayer implements ServiceConnection {
             return fallbackSubtitle;
         }
 
+        private DisplayText displayText() {
+            return buildDisplayText(title, subtitle());
+        }
+
+        private String displayTitle() {
+            return displayText().title;
+        }
+
+        private String displaySubtitle() {
+            return displayText().subtitle;
+        }
+
         public Result copyResult() {
             return cloneResult(result);
         }
@@ -638,6 +712,43 @@ public final class AudioMiniPlayer implements ServiceConnection {
 
         public String playlistText() {
             return String.format(Locale.getDefault(), "%d/%d", episodes.isEmpty() ? 0 : index + 1, episodes.size());
+        }
+    }
+
+    private static DisplayText buildDisplayText(String title, String subtitle) {
+        String targetTitle = Objects.toString(title, "").trim();
+        String targetSubtitle = Objects.toString(subtitle, "").trim();
+        if (TextUtils.isEmpty(targetTitle)) targetTitle = "音频播放";
+        if (isGenericTitle(targetTitle) && !TextUtils.isEmpty(targetSubtitle)) return splitTrackText(targetSubtitle);
+        if (!TextUtils.isEmpty(targetSubtitle) && targetTitle.equals(targetSubtitle)) return splitTrackText(targetTitle);
+        return new DisplayText(targetTitle, targetSubtitle);
+    }
+
+    private static DisplayText splitTrackText(String text) {
+        String value = Objects.toString(text, "").trim();
+        String[] separators = {" - ", " -", "- ", " / ", "/", "·", "、"};
+        for (String separator : separators) {
+            int index = value.indexOf(separator);
+            if (index <= 0) continue;
+            String title = value.substring(0, index).trim();
+            String artist = value.substring(index + separator.length()).trim();
+            if (!TextUtils.isEmpty(title) && !TextUtils.isEmpty(artist)) return new DisplayText(title, artist);
+        }
+        return new DisplayText(value, "");
+    }
+
+    private static boolean isGenericTitle(String title) {
+        return TITLE_PLAYLIST_DETAIL.equals(Objects.toString(title, "").trim());
+    }
+
+    private static final class DisplayText {
+
+        private final String title;
+        private final String subtitle;
+
+        private DisplayText(String title, String subtitle) {
+            this.title = Objects.toString(title, "");
+            this.subtitle = Objects.toString(subtitle, "");
         }
     }
 }

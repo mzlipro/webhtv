@@ -31,6 +31,10 @@ public class Setting {
     public static final int DETAIL_OPEN_PLAYER = 4;
     public static final int DETAIL_STYLE_PROFILE = 0;
     public static final int DETAIL_STYLE_CINEMA = 1;
+    public static final int TMDB_MATCH_STRICT = 0;
+    public static final int TMDB_MATCH_SMART = 1;
+    public static final int TMDB_MATCH_STRICT_DIALOG = 2;
+    public static final int TMDB_MATCH_SMART_DIALOG = 3;
 
     public static String getDoh() {
         return Prefers.getString("doh");
@@ -357,6 +361,31 @@ public class Setting {
 
     public static boolean isTmdbSiteEnabled(String key, String name) {
         return TmdbConfig.objectFrom(getTmdbConfig()).isSiteEnabled(key, name);
+    }
+
+    public static int getTmdbMatchMode() {
+        if (Prefers.getPrefers().contains("tmdb_match_mode")) return clampTmdbMatchMode(Prefers.getInt("tmdb_match_mode", TMDB_MATCH_SMART));
+        if (Prefers.getPrefers().contains("tmdb_match_dialog")) return Prefers.getBoolean("tmdb_match_dialog", true) ? TMDB_MATCH_STRICT_DIALOG : TMDB_MATCH_STRICT;
+        return TMDB_MATCH_SMART;
+    }
+
+    public static void putTmdbMatchMode(int mode) {
+        Prefers.put("tmdb_match_mode", clampTmdbMatchMode(mode));
+    }
+
+    public static boolean isTmdbSmartMatch() {
+        int mode = getTmdbMatchMode();
+        return mode == TMDB_MATCH_SMART || mode == TMDB_MATCH_SMART_DIALOG;
+    }
+
+    public static boolean isTmdbMatchDialog() {
+        int mode = getTmdbMatchMode();
+        return mode == TMDB_MATCH_STRICT_DIALOG || mode == TMDB_MATCH_SMART_DIALOG;
+    }
+
+    private static int clampTmdbMatchMode(int mode) {
+        if (mode == TMDB_MATCH_STRICT || mode == TMDB_MATCH_SMART || mode == TMDB_MATCH_STRICT_DIALOG || mode == TMDB_MATCH_SMART_DIALOG) return mode;
+        return TMDB_MATCH_SMART;
     }
 
     public static int getDetailOpenMode() {

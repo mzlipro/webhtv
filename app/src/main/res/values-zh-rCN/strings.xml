@@ -297,6 +297,7 @@
     <string name="setting_fullscreen_menu_key">全屏菜单键</string>
     <string name="setting_home_menu_key">首页菜单键</string>
     <string name="setting_play_back_to_detail">播放返回详情页</string>
+    <string name="setting_tmdb_match_mode">TMDB 匹配模式</string>
     <string name="setting_home_history">首页最近观看</string>
     <string name="setting_drive_check">网盘检测</string>
     <string name="setting_search_thread">搜索线程</string>
@@ -534,6 +535,13 @@
         <item>自适应</item>
         <item>1个</item>
         <item>2个</item>
+    </string-array>
+
+    <string-array name="select_tmdb_match_mode">
+        <item>严格</item>
+        <item>智能</item>
+        <item>严格 + 弹窗</item>
+        <item>智能 + 弹窗</item>
     </string-array>
 
     <string-array name="select_site_column">

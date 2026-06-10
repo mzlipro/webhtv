@@ -148,7 +148,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private static final int INLINE_SIDE_CONTROL_FULLSCREEN_MARGIN_DP = 48;
     private static final long LEANBACK_FUSION_EXIT_DISPLAY_SUPPRESS_MS = 800;
     private static final float NORMAL_SPEED = 1.0f;
-    private static final Pattern SOURCE_SEASON = Pattern.compile("(?i)(?:第\\s*([零一二三四五六七八九十两0-9]+)\\s*[季部]|season\\s*([0-9]{1,2})|s([0-9]{1,2})(?:[-._\\s]*e[0-9]{1,3})?)");
+    private static final Pattern SOURCE_SEASON = Pattern.compile("(?i)(?:第\\s*([零〇一二三四五六七八九十两0-9]+)\\s*[季部]|season\\s*([0-9]{1,2})|s([0-9]{1,2})(?:[-._\\s]*e[0-9]{1,3})?)");
 
     private final TmdbService tmdbService = new TmdbService();
     private final List<TmdbPerson> detailCastItems = new ArrayList<>();
@@ -169,6 +169,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     @androidx.annotation.Keep
     private ActivityTmdbDetailBinding mBinding;
     private Vod vod;
+    private String sourceVodName;
     private History history;
     @androidx.annotation.Keep
     private History mHistory;
@@ -1254,6 +1255,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             return;
         }
         vod = loadedVod;
+        sourceVodName = loadedVod.getName();
         applyTmdbBundle(bundle);
         if (bundle != null) saveTmdbMatch(bundle.item());
         enrichVod();
@@ -1262,7 +1264,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         focusInlinePlayerPanel();
         maybeAutoPlayInline();
         if (bundle != null) loadTmdbMediaBlocks(bundle);
-        if (allowMatchDialog && canMatchTmdb() && bundle == null && initialTmdbItem == null) showTmdbMatchDialog(searchItems);
+        if (allowMatchDialog && shouldShowAutoTmdbMatchDialog(bundle)) showTmdbMatchDialog(searchItems);
     }
 
     private TmdbLoadResult loadTmdbResult() {
@@ -1315,7 +1317,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         bindTmdbSection();
         focusInlinePlayerPanel();
         if (bundle != null) loadTmdbMediaBlocks(bundle);
-        if (canMatchTmdb() && bundle == null && initialTmdbItem == null) showTmdbMatchDialog(result == null ? List.of() : result.searchItems());
+        if (shouldShowAutoTmdbMatchDialog(bundle)) showTmdbMatchDialog(result == null ? List.of() : result.searchItems());
     }
 
     private TmdbBundle loadTmdbBundle(TmdbItem item) throws Exception {
@@ -1413,6 +1415,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void showTmdbMatchDialog(List<TmdbItem> items) {
         showTmdbMatchDialog(items, true);
+    }
+
+    private boolean shouldShowAutoTmdbMatchDialog(TmdbBundle bundle) {
+        return Setting.isTmdbMatchDialog() && canMatchTmdb() && bundle == null && initialTmdbItem == null;
     }
 
     private void showTmdbMatchDialog(List<TmdbItem> items, boolean skippable) {
@@ -1925,9 +1931,20 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private int sourceSeasonNumber(Episode episode) {
         if (episode == null) return -1;
-        String name = episode.getName();
-        if (TextUtils.isEmpty(name)) return -1;
-        Matcher matcher = SOURCE_SEASON.matcher(name);
+        return sourceSeasonNumber(episode.getName());
+    }
+
+    private int sourceTitleSeasonNumber() {
+        int number = sourceSeasonNumber(sourceVodName);
+        if (number > 0) return number;
+        number = sourceSeasonNumber(getNameText());
+        if (number > 0) return number;
+        return vod == null ? -1 : sourceSeasonNumber(vod.getName());
+    }
+
+    private int sourceSeasonNumber(String text) {
+        if (TextUtils.isEmpty(text)) return -1;
+        Matcher matcher = SOURCE_SEASON.matcher(text);
         while (matcher.find()) {
             int number = normalizeSourceNumber(firstNonEmptyGroup(matcher, 1, 2, 3));
             if (number > 0) return number;
@@ -1958,7 +1975,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private int parseSmallChineseNumber(String value) {
         if (TextUtils.isEmpty(value)) return 0;
-        value = value.replace("两", "二").replace("零", "");
+        value = value.replace("两", "二").replace("零", "").replace("〇", "");
         if (value.matches("[一二三四五六七八九]")) return chineseDigit(value.charAt(0));
         int tenIndex = value.indexOf("十");
         if (tenIndex >= 0) {
@@ -1987,7 +2004,10 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private List<Episode> visibleEpisodes(List<Episode> episodes) {
         if (episodes == null || episodes.isEmpty()) return List.of();
         if (seasonNumbers.size() <= 1 || selectedSeasonNumber < 0) return episodes;
-        if (hasExplicitSeasonNumbers(episodes)) {
+        boolean hasExplicitSeasons = hasExplicitSeasonNumbers(episodes);
+        int titleSeason = sourceTitleSeasonNumber();
+        if (!hasExplicitSeasons && seasonNumbers.contains(titleSeason)) return selectedSeasonNumber == titleSeason ? episodes : List.of();
+        if (hasExplicitSeasons) {
             List<Episode> visible = new ArrayList<>();
             for (Episode episode : episodes) if (sourceSeasonNumber(episode) == selectedSeasonNumber) visible.add(episode);
             if (!visible.isEmpty()) return visible;
@@ -2012,6 +2032,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (seasonNumbers.size() == 1) return seasonNumbers.get(0);
         int sourceSeason = sourceSeasonNumber(episode);
         if (seasonNumbers.contains(sourceSeason)) return sourceSeason;
+        int titleSeason = sourceTitleSeasonNumber();
+        if (!hasExplicitSeasonNumbers(episodes) && seasonNumbers.contains(titleSeason)) return titleSeason;
         if (selectedSeasonNumber > 0 && sourceEpisodeNumber(episode) > 0) return selectedSeasonNumber;
         int index = episode == null ? -1 : episodes.indexOf(episode);
         if (index < 0) return firstSeasonNumber(matchedTmdbDetail);
@@ -3806,6 +3828,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         }
         if (index < 0) return new EpisodePosition(selectedSeasonNumber, -1);
         if (seasonNumbers.size() <= 1 || selectedSeasonNumber < 0) return new EpisodePosition(selectedSeasonNumber, index + 1);
+        int titleSeason = sourceTitleSeasonNumber();
+        if (!hasExplicitSeasonNumbers(episodes) && seasonNumbers.contains(titleSeason)) return new EpisodePosition(titleSeason, index + 1);
         int start = 0;
         for (int i = 0; i < seasonNumbers.size(); i++) {
             Integer season = seasonNumbers.get(i);
@@ -4782,11 +4806,19 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private TmdbItem chooseTmdbMatch(List<TmdbItem> items, String keyword, @Nullable Vod sourceVod) {
+        TmdbItem strict = chooseStrictTmdbMatch(items, keyword, sourceVod);
+        if (strict != null || !Setting.isTmdbSmartMatch() || sourceVod == null) return strict;
+        TmdbBundle bundle = chooseSmartTmdbBundle(items, keyword, sourceVod);
+        return bundle == null ? null : bundle.item();
+    }
+
+    private TmdbItem chooseStrictTmdbMatch(List<TmdbItem> items, String keyword, @Nullable Vod sourceVod) {
         // 自动匹配必须保持保守：这里只允许“标题归一化后完全一致”的候选进入评分。
         // 如果站源详情或搜索词里能提取到年份，候选的 TMDB 年份也必须完全同年。
+        // 源标题明确带季数时，允许用对应 TMDB 分季首播年匹配根剧集条目。
         // 演员、导演、简介里的主创信息只用于同名候选之间消歧，不允许用来放宽标题或年份规则。
-        logTmdbMatch("开始自动匹配：关键词=%s，归一化=%s，站源年份=%d，是否有站源详情=%s，候选原始数量=%d",
-                keyword, normalize(keyword), sourceYear(keyword, sourceVod), sourceVod != null, items == null ? 0 : items.size());
+        logTmdbMatch("开始自动匹配：关键词=%s，归一化=%s，站源年份=%d，站源季=%d，是否有站源详情=%s，候选原始数量=%d",
+                keyword, normalize(keyword), sourceYear(keyword, sourceVod), sourceSeasonNumber(keyword, sourceVod), sourceVod != null, items == null ? 0 : items.size());
         List<TmdbCandidate> candidates = scoreTmdbCandidates(items, keyword, sourceVod);
         if (candidates.isEmpty()) {
             logTmdbMatch("自动匹配结束：没有严格标题/年份一致的候选，交给手动选择");
@@ -4815,9 +4847,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         List<TmdbCandidate> candidates = scoreTmdbCandidates(items, keyword, sourceVod);
         if (candidates.isEmpty()) {
             logTmdbMatch("详情消歧结束：没有可消歧候选");
-            return null;
+            return Setting.isTmdbSmartMatch() ? chooseSmartTmdbBundle(items, keyword, sourceVod) : null;
         }
-        TmdbItem quick = chooseTmdbMatch(items, keyword, sourceVod);
+        TmdbItem quick = chooseStrictTmdbMatch(items, keyword, sourceVod);
         if (quick != null) {
             try {
                 logTmdbMatch("详情消歧跳过：基础规则已经可确定，直接加载=%s(%d)", quick.getTitle(), tmdbItemYear(quick));
@@ -4828,7 +4860,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         }
         if (!hasSourcePeople(sourceVod)) {
             logTmdbMatch("详情消歧结束：站源没有演员/导演/简介，无法继续自动消歧");
-            return null;
+            return Setting.isTmdbSmartMatch() ? chooseSmartTmdbBundle(items, keyword, sourceVod) : null;
         }
         TmdbCandidate best = null;
         TmdbCandidate second = null;
@@ -4855,13 +4887,14 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         }
         if (best == null || best.bundle == null) {
             logTmdbMatch("详情消歧结束：没有成功加载的候选详情");
-            return null;
+            return Setting.isTmdbSmartMatch() ? chooseSmartTmdbBundle(items, keyword, sourceVod) : null;
         }
         int gap = second == null ? best.score : best.score - second.score;
         boolean accepted = best.score >= 420 && gap >= 50;
         logTmdbMatch("详情消歧判定：最佳=%s(%d年, 分=%d)，第二=%s，分差=%d，结果=%s",
                 best.item.getTitle(), tmdbItemYear(best.item), best.score, second == null ? "无" : second.item.getTitle() + "(" + second.score + ")", gap, accepted ? "通过" : "不通过");
-        return accepted ? best.bundle : null;
+        if (accepted) return best.bundle;
+        return Setting.isTmdbSmartMatch() ? chooseSmartTmdbBundle(items, keyword, sourceVod) : null;
     }
 
     private List<TmdbCandidate> scoreTmdbCandidates(List<TmdbItem> items, String keyword, @Nullable Vod sourceVod) {
@@ -4869,6 +4902,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (items == null || items.isEmpty()) return candidates;
         String normalized = normalize(keyword);
         int sourceYear = sourceYear(keyword, sourceVod);
+        int sourceSeason = sourceSeasonNumber(keyword, sourceVod);
         for (TmdbItem item : items) {
             // 第一层过滤只看标题是否完全一致，不做 contains、相似度、首尾包含等近似判断。
             int titleScore = scoreTmdbTitle(item, normalized);
@@ -4876,21 +4910,214 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 logTmdbMatch("候选过滤：标题不一致，关键词=%s，候选=%s，候选年份=%d", keyword, item.getTitle(), tmdbItemYear(item));
                 continue;
             }
-            // 第二层过滤看年份：只要站源侧有年份，TMDB 侧必须同年，差一年也不自动匹配。
-            if (sourceYear > 0 && tmdbItemYear(item) != sourceYear) {
-                logTmdbMatch("候选过滤：年份不一致，关键词=%s，候选=%s，站源年份=%d，TMDB年份=%d", keyword, item.getTitle(), sourceYear, tmdbItemYear(item));
-                continue;
+            int itemYear = tmdbItemYear(item);
+            boolean seasonYearMatched = false;
+            // 第二层过滤看年份：只要站源侧有年份，TMDB 侧必须同年；源标题带季数时，可用对应季年份命中根剧集。
+            if (sourceYear > 0 && itemYear != sourceYear) {
+                seasonYearMatched = tmdbSeasonYearMatches(item, sourceSeason, sourceYear);
+                if (!seasonYearMatched) {
+                    logTmdbMatch("候选过滤：年份不一致，关键词=%s，候选=%s，站源年份=%d，TMDB年份=%d，站源季=%d", keyword, item.getTitle(), sourceYear, itemYear, sourceSeason);
+                    continue;
+                }
             }
-            int yearScore = scoreTmdbYear(item, sourceYear);
+            int yearScore = seasonYearMatched ? 120 : scoreTmdbYear(item, sourceYear);
+            int seasonScore = seasonYearMatched ? 60 : 0;
             int typeScore = scoreTmdbMediaType(item, sourceVod);
             int creditScore = scoreTmdbPeople(item, sourceVod);
-            int score = titleScore + yearScore + typeScore + creditScore;
-            logTmdbMatch("候选保留：标题=%s，媒体=%s，年份=%d，标题分=%d，年份分=%d，类型分=%d，已有职员分=%d，总分=%d",
-                    item.getTitle(), item.getMediaType(), tmdbItemYear(item), titleScore, yearScore, typeScore, creditScore, score);
+            int score = titleScore + yearScore + seasonScore + typeScore + creditScore;
+            logTmdbMatch("候选保留：标题=%s，媒体=%s，年份=%d，站源季=%d，季年匹配=%s，标题分=%d，年份分=%d，季分=%d，类型分=%d，已有职员分=%d，总分=%d",
+                    item.getTitle(), item.getMediaType(), itemYear, sourceSeason, seasonYearMatched, titleScore, yearScore, seasonScore, typeScore, creditScore, score);
             candidates.add(new TmdbCandidate(item, titleScore, score, null));
         }
         candidates.sort((a, b) -> Integer.compare(b.score, a.score));
         return candidates;
+    }
+
+    @Nullable
+    private TmdbBundle chooseSmartTmdbBundle(List<TmdbItem> items, String keyword, @Nullable Vod sourceVod) {
+        if (items == null || items.isEmpty()) return null;
+        List<TmdbCandidate> candidates = scoreSmartTmdbCandidates(items, keyword, sourceVod);
+        if (candidates.isEmpty()) {
+            logTmdbMatch("智能匹配结束：没有可用候选");
+            return null;
+        }
+        List<TmdbCandidate> scored = new ArrayList<>();
+        int count = Math.min(6, candidates.size());
+        logTmdbMatch("智能匹配开始拉取候选详情：关键词=%s，候选数量=%d，拉取上限=%d", keyword, candidates.size(), count);
+        for (int i = 0; i < count; i++) {
+            TmdbCandidate candidate = candidates.get(i);
+            try {
+                TmdbBundle bundle = loadTmdbBundle(candidate.item);
+                int detailScore = scoreTmdbCountry(bundle.detail(), sourceVod) + scoreTmdbPeople(bundle.detail(), sourceVod);
+                int score = candidate.score + detailScore;
+                logTmdbMatch("智能匹配候选：标题=%s，媒体=%s，年份=%d，基础分=%d，详情分=%d，总分=%d",
+                        candidate.item.getTitle(), candidate.item.getMediaType(), tmdbItemYear(candidate.item), candidate.score, detailScore, score);
+                scored.add(new TmdbCandidate(candidate.item, candidate.titleScore, score, bundle));
+            } catch (Throwable ignored) {
+                logTmdbMatch("智能匹配候选加载失败：标题=%s，错误=%s", candidate.item.getTitle(), ignored.getMessage());
+            }
+        }
+        if (scored.isEmpty()) {
+            logTmdbMatch("智能匹配结束：没有成功加载详情的候选");
+            return null;
+        }
+        scored.sort((a, b) -> Integer.compare(b.score, a.score));
+        TmdbCandidate best = scored.get(0);
+        TmdbCandidate second = scored.size() > 1 ? scored.get(1) : null;
+        int sourceYear = sourceYear(keyword, sourceVod);
+        int gap = second == null ? best.score : best.score - second.score;
+        boolean accepted = best.score >= smartAcceptScore(sourceYear) && (gap >= 25 || isUniqueNewest(best, scored, sourceYear));
+        logTmdbMatch("智能匹配判定：最佳=%s(%d年, 分=%d)，第二=%s，分差=%d，结果=%s",
+                best.item.getTitle(), tmdbItemYear(best.item), best.score, second == null ? "无" : second.item.getTitle() + "(" + second.score + ")", gap, accepted ? "通过" : "不通过");
+        return accepted ? best.bundle : null;
+    }
+
+    private List<TmdbCandidate> scoreSmartTmdbCandidates(List<TmdbItem> items, String keyword, @Nullable Vod sourceVod) {
+        List<TmdbCandidate> candidates = new ArrayList<>();
+        String normalized = normalize(keyword);
+        int sourceYear = sourceYear(keyword, sourceVod);
+        for (TmdbItem item : items) {
+            int titleScore = scoreTmdbSmartTitle(item, normalized);
+            if (titleScore <= 0) {
+                logTmdbMatch("智能候选过滤：标题差异过大，关键词=%s，候选=%s，候选年份=%d", keyword, item.getTitle(), tmdbItemYear(item));
+                continue;
+            }
+            int yearScore = scoreTmdbSmartYear(item, sourceYear);
+            if (sourceYear > 0 && yearScore < 0) {
+                logTmdbMatch("智能候选过滤：年份差异过大，关键词=%s，候选=%s，站源年份=%d，TMDB年份=%d", keyword, item.getTitle(), sourceYear, tmdbItemYear(item));
+                continue;
+            }
+            int freshnessScore = sourceYear > 0 ? 0 : scoreTmdbFreshness(item);
+            int typeScore = scoreTmdbMediaType(item, sourceVod);
+            int creditScore = scoreTmdbPeople(item, sourceVod);
+            int voteScore = scoreTmdbVote(item);
+            int score = titleScore + yearScore + freshnessScore + typeScore + creditScore + voteScore;
+            logTmdbMatch("智能候选保留：标题=%s，媒体=%s，年份=%d，标题分=%d，年份分=%d，近期分=%d，类型分=%d，已有职员分=%d，评分分=%d，总分=%d",
+                    item.getTitle(), item.getMediaType(), tmdbItemYear(item), titleScore, yearScore, freshnessScore, typeScore, creditScore, voteScore, score);
+            candidates.add(new TmdbCandidate(item, titleScore, score, null));
+        }
+        candidates.sort((a, b) -> Integer.compare(b.score, a.score));
+        return candidates;
+    }
+
+    private int scoreTmdbSmartTitle(TmdbItem item, String normalizedKeyword) {
+        int strict = scoreTmdbTitle(item, normalizedKeyword);
+        if (strict > 0) return strict;
+        int year = tmdbItemYear(item);
+        String cleaned = year > 0 ? removeYearFromTitle(item.getTitle(), year) : cleanTmdbSearchQuery(item.getTitle());
+        return normalize(cleaned).equals(normalizedKeyword) ? 280 : 0;
+    }
+
+    private int scoreTmdbSmartYear(TmdbItem item, int sourceYear) {
+        if (sourceYear <= 0) return 0;
+        int itemYear = tmdbItemYear(item);
+        if (itemYear <= 0) return -20;
+        int diff = Math.abs(itemYear - sourceYear);
+        if (diff == 0) return 120;
+        if (diff == 1) return 70;
+        return -1;
+    }
+
+    private int scoreTmdbFreshness(TmdbItem item) {
+        int year = tmdbItemYear(item);
+        if (year <= 0) return 0;
+        int age = LocalDateTime.now().getYear() - year;
+        if (age <= 0) return 80;
+        if (age == 1) return 70;
+        if (age <= 3) return 55;
+        if (age <= 5) return 45;
+        if (age <= 10) return 30;
+        return 15;
+    }
+
+    private int scoreTmdbVote(TmdbItem item) {
+        Matcher matcher = Pattern.compile("评分\\s*([0-9](?:\\.[0-9])?)").matcher(item.getSubtitle());
+        double vote = 0;
+        if (matcher.find()) {
+            try {
+                vote = Double.parseDouble(matcher.group(1));
+            } catch (Throwable ignored) {
+            }
+        }
+        if (vote >= 8.0) return 20;
+        if (vote >= 7.0) return 12;
+        if (vote >= 6.0) return 5;
+        return 0;
+    }
+
+    private int scoreTmdbCountry(JsonObject detail, @Nullable Vod sourceVod) {
+        Set<String> preferred = preferredCountryCodes(sourceVod);
+        Set<String> countries = tmdbCountryCodes(detail);
+        if (countries.isEmpty()) return 0;
+        boolean explicit = hasExplicitCountryPreference(sourceVod);
+        for (String code : preferred) if (countries.contains(code)) return explicit ? 120 : 45;
+        return explicit ? -60 : 0;
+    }
+
+    private Set<String> preferredCountryCodes(@Nullable Vod sourceVod) {
+        Set<String> codes = explicitCountryCodes(sourceVod);
+        if (!codes.isEmpty()) return codes;
+        return Set.of("CN");
+    }
+
+    private boolean hasExplicitCountryPreference(@Nullable Vod sourceVod) {
+        return !explicitCountryCodes(sourceVod).isEmpty();
+    }
+
+    private Set<String> explicitCountryCodes(@Nullable Vod sourceVod) {
+        Set<String> codes = new HashSet<>();
+        if (sourceVod == null) return codes;
+        String text = normalize(sourceVod.getArea() + " " + sourceVod.getTypeName() + " " + sourceVod.getRemarks() + " " + sourceVod.getName());
+        addCountryCode(codes, text, "CN", "中国", "中國", "大陆", "大陸", "内地", "內地", "国产", "國產", "华语", "華語");
+        addCountryCode(codes, text, "HK", "香港", "港剧", "港劇");
+        addCountryCode(codes, text, "TW", "台湾", "台灣", "台剧", "台劇");
+        addCountryCode(codes, text, "JP", "日本", "日剧", "日劇", "日影", "日漫");
+        addCountryCode(codes, text, "KR", "韩国", "韓國", "韩剧", "韓劇", "韩影", "韓影");
+        addCountryCode(codes, text, "US", "美国", "美國", "美剧", "美劇", "欧美", "歐美");
+        addCountryCode(codes, text, "GB", "英国", "英國", "英剧", "英劇");
+        addCountryCode(codes, text, "TH", "泰国", "泰國", "泰剧", "泰劇");
+        addCountryCode(codes, text, "IN", "印度");
+        return codes;
+    }
+
+    private void addCountryCode(Set<String> codes, String text, String code, String... words) {
+        for (String word : words) {
+            if (!text.contains(normalize(word))) continue;
+            codes.add(code);
+            return;
+        }
+    }
+
+    private Set<String> tmdbCountryCodes(JsonObject detail) {
+        Set<String> codes = new HashSet<>();
+        for (JsonElement element : array(detail, "origin_country")) {
+            if (element.isJsonPrimitive()) codes.add(element.getAsString().toUpperCase(Locale.ROOT));
+        }
+        for (JsonElement element : array(detail, "production_countries")) {
+            if (!element.isJsonObject()) continue;
+            JsonObject country = element.getAsJsonObject();
+            String code = string(country, "iso_3166_1").toUpperCase(Locale.ROOT);
+            if (!TextUtils.isEmpty(code)) codes.add(code);
+            String name = normalize(string(country, "name"));
+            if (name.contains("china") || name.contains("中国") || name.contains("中國") || name.contains("大陆") || name.contains("大陸") || name.contains("内地") || name.contains("內地")) codes.add("CN");
+        }
+        return codes;
+    }
+
+    private int smartAcceptScore(int sourceYear) {
+        return sourceYear > 0 ? 390 : 335;
+    }
+
+    private boolean isUniqueNewest(TmdbCandidate best, List<TmdbCandidate> candidates, int sourceYear) {
+        if (sourceYear > 0 || best.titleScore < 300) return false;
+        int bestYear = tmdbItemYear(best.item);
+        if (bestYear <= 0) return false;
+        for (TmdbCandidate candidate : candidates) {
+            if (candidate == best) continue;
+            int year = tmdbItemYear(candidate.item);
+            if (year >= bestYear && candidate.score >= best.score - 10) return false;
+        }
+        return true;
     }
 
     private int scoreTmdbTitle(TmdbItem item, String normalizedKeyword) {
@@ -4912,6 +5139,33 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         // 如果副标题没有年份，再从标题兜底提取，兼容站源或接口返回的特殊格式。
         int year = firstYear(item.getSubtitle());
         return year > 0 ? year : firstYear(item.getTitle());
+    }
+
+    private boolean tmdbSeasonYearMatches(TmdbItem item, int seasonNumber, int sourceYear) {
+        if (item == null || seasonNumber <= 0 || sourceYear <= 0 || !"tv".equalsIgnoreCase(item.getMediaType())) return false;
+        try {
+            JsonObject detail = tmdbService.detail(item, tmdbConfig);
+            int seasonYear = tmdbSeasonYear(detail, seasonNumber);
+            boolean matched = seasonYear == sourceYear;
+            logTmdbMatch("候选季年%s：标题=%s，季=%d，站源年份=%d，TMDB季年份=%d",
+                    matched ? "命中" : "未命中", item.getTitle(), seasonNumber, sourceYear, seasonYear);
+            return matched;
+        } catch (Throwable ignored) {
+            logTmdbMatch("候选季年检查失败：标题=%s，季=%d，错误=%s", item.getTitle(), seasonNumber, ignored.getMessage());
+            return false;
+        }
+    }
+
+    private int tmdbSeasonYear(JsonObject detail, int seasonNumber) {
+        for (JsonElement element : array(detail, "seasons")) {
+            if (!element.isJsonObject()) continue;
+            JsonObject object = element.getAsJsonObject();
+            if (!object.has("season_number") || object.get("season_number").isJsonNull()) continue;
+            if (object.get("season_number").getAsInt() != seasonNumber) continue;
+            int year = firstYear(string(object, "air_date"));
+            return year > 0 ? year : firstYear(string(object, "name"));
+        }
+        return 0;
     }
 
     private int scoreTmdbMediaType(TmdbItem item, @Nullable Vod sourceVod) {
@@ -4939,6 +5193,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private int scoreTmdbPeople(JsonObject detail, Vod sourceVod) {
         // 用 TMDB 详情里的演员和主创完整姓名，去站源演员、导演、简介中查找。
         // 命中越多，说明同名候选越可能是同一部作品；但它只负责同名候选排序，不负责扩大候选范围。
+        if (sourceVod == null) return 0;
         String source = normalize(sourceVod.getActor() + " " + sourceVod.getDirector() + " " + sourceVod.getContent());
         if (TextUtils.isEmpty(source)) return 0;
         int score = 0;
@@ -4977,6 +5232,13 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (year > 0) return year;
         year = firstYear(getNameText());
         return year > 0 ? year : firstYear(keyword);
+    }
+
+    private int sourceSeasonNumber(String keyword, @Nullable Vod sourceVod) {
+        int number = sourceVod == null ? -1 : sourceSeasonNumber(sourceVod.getName());
+        if (number > 0) return number;
+        number = sourceSeasonNumber(getNameText());
+        return number > 0 ? number : sourceSeasonNumber(keyword);
     }
 
     @Nullable
@@ -5065,8 +5327,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         cleaned = cleaned.replaceAll("(?i)\\.(mkv|mp4|avi|mov|wmv|flv|rmvb|ts|m2ts)$", "");
         cleaned = removeNoiseBrackets(cleaned);
         cleaned = cleaned.replaceAll("(?i)\\b(S\\d{1,2}|Season\\s*\\d{1,2})\\b", " ");
-        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇0-9]+\\s*[季部]", " ");
-        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇0-9]+\\s*[集话話]", " ");
+        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇两0-9]+\\s*[季部]", " ");
+        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇两0-9]+\\s*[集话話]", " ");
         cleaned = cleaned.replaceAll("(全|共|更新至|更至|连载至|連載至)\\s*[0-9一二三四五六七八九十百零〇]+\\s*[集话話]", " ");
         cleaned = cleaned.replaceAll("(?i)\\b(4K|8K|1080P|2160P|720P|HDR|HDR10|DV|WEB[- ]?DL|BluRay|BDRip|Remux|HEVC|H\\.?265|H\\.?264|x265|x264|AAC|DTS|DDP?5?\\.?1|Atmos|NF|Netflix|AMZN|DSNP)\\b", " ");
         cleaned = cleaned.replaceAll("(国语版|国配版|普通话版|粤语版|台语版|闽南语版|原声版|配音版|中字版|字幕版|台版|台灣版|台湾版|港版|港澳版|大陆版|內地版|内地版|中国版|中國版|泰版|泰国版|泰國版|韩版|韩国版|韓國版|日版|日本版|美版|美国版|美國版|英版|英国版|英國版)", " ");

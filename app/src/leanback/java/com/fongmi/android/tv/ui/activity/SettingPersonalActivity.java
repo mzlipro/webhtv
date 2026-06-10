@@ -23,6 +23,7 @@ public class SettingPersonalActivity extends BaseActivity {
     private String[] homeMenuKey;
     private String[] searchUi;
     private String[] searchColumn;
+    private String[] tmdbMatchMode;
 
     public static void start(Activity activity) {
         activity.startActivity(new Intent(activity, SettingPersonalActivity.class));
@@ -50,6 +51,7 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.fullscreenMenuKey.setOnClickListener(this::setFullscreenMenuKey);
         mBinding.homeMenuKey.setOnClickListener(this::setHomeMenuKey);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
+        mBinding.tmdbMatchMode.setOnClickListener(this::setTmdbMatchMode);
         mBinding.homeHistory.setOnClickListener(this::setHomeHistory);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
         mBinding.searchColumn.setOnClickListener(this::setSearchColumn);
@@ -62,6 +64,7 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.fullscreenMenuKeyText.setText((fullscreenMenuKey = getResources().getStringArray(R.array.select_fullscreen_menu_key))[Setting.getFullscreenMenuKey()]);
         mBinding.homeMenuKeyText.setText((homeMenuKey = getResources().getStringArray(R.array.select_home_menu_key))[Setting.getHomeMenuKey()]);
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
+        mBinding.tmdbMatchModeText.setText((tmdbMatchMode = getResources().getStringArray(R.array.select_tmdb_match_mode))[Setting.getTmdbMatchMode()]);
         mBinding.homeHistoryText.setText(getSwitch(Setting.isHomeHistory()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
         mBinding.searchColumnText.setText(getSearchColumnText());
@@ -111,6 +114,11 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setPlayBackToDetail(View view) {
         Setting.putPlayBackToDetail(!Setting.isPlayBackToDetail());
+        setText();
+    }
+
+    private void setTmdbMatchMode(View view) {
+        Setting.putTmdbMatchMode((Setting.getTmdbMatchMode() + 1) % tmdbMatchMode.length);
         setText();
     }
 

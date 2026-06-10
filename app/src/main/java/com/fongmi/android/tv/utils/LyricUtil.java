@@ -44,6 +44,7 @@ public class LyricUtil {
             }
             String cacheKey = cacheKey(title, subtitle, durationMs);
             String cached = Prefers.getString(cacheKey);
+            if (TextUtils.isEmpty(cached) && durationMs > 0) cached = Prefers.getString(cacheKey(title, subtitle, 0));
             if (!TextUtils.isEmpty(cached)) {
                 SpiderDebug.log(TAG, "歌词匹配命中缓存 title=%s subtitle=%s", title, subtitle);
                 return cached;

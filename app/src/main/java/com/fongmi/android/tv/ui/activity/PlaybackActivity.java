@@ -55,7 +55,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     }
 
     protected PlayerManager player() {
-        return mService.player();
+        return mService == null ? null : mService.player();
     }
 
     protected boolean isRedirect() {
@@ -109,7 +109,8 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
 
     protected boolean isOwner() {
         String key = getPlaybackKey();
-        return key == null || (mService != null && key.equals(player().getKey()));
+        PlayerManager manager = player();
+        return key == null || (manager != null && key.equals(manager.getKey()));
     }
 
     protected boolean isIdle() {

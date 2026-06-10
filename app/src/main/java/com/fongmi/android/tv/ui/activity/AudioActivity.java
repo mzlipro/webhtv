@@ -83,6 +83,7 @@ public class AudioActivity extends PlaybackActivity {
     private static final String EXTRA_PIC = "pic";
     private static final String PREF_LYRIC_OFFSET_PREFIX = "audio_lyric_offset_";
     private static final String PREF_COVER_BACKGROUND = "audio_cover_background";
+    private static final String TITLE_PLAYLIST_DETAIL = "歌单详情";
     private static final long LYRIC_OFFSET_STEP = 500L;
     private static final long LYRIC_OFFSET_LIMIT = 30000L;
     private static final Pattern LRC_TIME = Pattern.compile("\\[(\\d{1,3}):(\\d{1,2})(?:\\.(\\d{1,3}))?]");
@@ -105,7 +106,7 @@ public class AudioActivity extends PlaybackActivity {
         @Override
         public void run() {
             lyricBrowsing = false;
-            updateLyric(player() == null ? 0 : Math.max(0, player().getPosition()));
+            updateLyric(getPlayerPosition());
         }
     };
 
@@ -273,6 +274,7 @@ public class AudioActivity extends PlaybackActivity {
         binding.playlist.setLayoutManager(new LinearLayoutManager(this));
         binding.playlist.setAdapter(playlistAdapter);
         playlistAdapter.setItems(episodes);
+        binding.title.setSelected(true);
         applyAudioInsets();
         setText();
         setCover();
@@ -361,13 +363,30 @@ public class AudioActivity extends PlaybackActivity {
     protected void onServiceConnected() {
         AudioMiniPlayer.deactivateForFull(service());
         setMode(mode, false);
-        if (isOwner() && player() != null && !player().isReleased() && !player().isEmpty() && getPlaybackKey().equals(player().getKey())) {
-            started = true;
-            updatePlayIcon();
-            updatePlaylistState();
+        PlayerManager manager = player();
+        if (isOwner() && manager != null && !manager.isReleased() && !manager.isEmpty() && getPlaybackKey().equals(manager.getKey())) {
+            restoreCurrent(manager);
             return;
         }
         if (!started) playCurrent(initialResult);
+    }
+
+    private void restoreCurrent(PlayerManager manager) {
+        started = true;
+        binding.loading.setVisibility(manager.getPlaybackState() == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
+        lyricEnabled = shouldEnableLyrics(initialResult);
+        lyricOffset = getSavedLyricOffset();
+        setText();
+        setCover();
+        updateAudioToolState();
+        updatePlayIcon();
+        updatePlaylistState();
+        if (lyricEnabled) {
+            loadLyrics(initialResult);
+            loadArtwork();
+        } else {
+            disableLyrics();
+        }
     }
 
     @Override
@@ -389,7 +408,8 @@ public class AudioActivity extends PlaybackActivity {
     @Override
     protected void onStateChanged(int state) {
         binding.loading.setVisibility(state == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
-        if (state == Player.STATE_READY) player().reset();
+        PlayerManager manager = player();
+        if (state == Player.STATE_READY && manager != null) manager.reset();
         if (state == Player.STATE_ENDED && mode != 2) playNext(false);
         updatePlayIcon();
     }
@@ -412,20 +432,24 @@ public class AudioActivity extends PlaybackActivity {
 
         @Override
         public void onReplay() {
-            if (player() == null) return;
-            player().seekTo(0);
-            player().play();
+            PlayerManager manager = player();
+            if (manager == null) return;
+            manager.seekTo(0);
+            manager.play();
         }
     };
 
     private void playCurrent(Result result) {
-        started = true;
+        if (isFinishing() || isDestroyed()) return;
         Result target = prepareResult(result);
         if (target == null || target.getRealUrl().isEmpty()) {
             Notify.show("音频地址为空");
             finish();
             return;
         }
+        PlayerManager manager = player();
+        if (manager == null) return;
+        started = true;
         initialResult = Result.fromJson(Objects.toString(target, ""));
         if (target.hasArtwork()) getIntent().putExtra(EXTRA_PIC, target.getArtwork());
         lyricEnabled = shouldEnableLyrics(target);
@@ -434,9 +458,9 @@ public class AudioActivity extends PlaybackActivity {
         setCover();
         updateAudioToolState();
         updateHistoryForTrack();
-        MediaMetadata metadata = PlayerManager.buildMetadata(getTitleText(), getSubtitleText(), getPic());
+        MediaMetadata metadata = buildAudioMetadata();
         startPlayer(getPlaybackKey(), target, target.shouldUseParse(), getTimeout(), metadata);
-        player().play();
+        manager.play();
         if (lyricEnabled) {
             loadLyrics(target);
             loadArtwork();
@@ -512,7 +536,9 @@ public class AudioActivity extends PlaybackActivity {
             controller().pause();
             updatePlayIcon(false);
         } else {
-            if (!player().isEmpty() && isIdle()) controller().prepare();
+            PlayerManager manager = player();
+            if (manager == null) return;
+            if (!manager.isEmpty() && isIdle()) controller().prepare();
             controller().play();
             updatePlayIcon(true);
         }
@@ -526,7 +552,8 @@ public class AudioActivity extends PlaybackActivity {
 
     private void stopAndFinish() {
         AudioMiniPlayer.deactivateForFull(service());
-        if (service() != null && player() != null) player().stop();
+        PlayerManager manager = player();
+        if (manager != null) manager.stop();
         finish();
     }
 
@@ -536,7 +563,8 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private void minimizeToFloatingPlayer() {
-        if (service() == null || player() == null || player().isReleased() || player().isEmpty()) {
+        PlayerManager manager = player();
+        if (manager == null || manager.isReleased() || manager.isEmpty()) {
             finish();
             return;
         }
@@ -573,7 +601,8 @@ public class AudioActivity extends PlaybackActivity {
 
     private void setMode(int mode, boolean toast) {
         this.mode = mode;
-        if (service() != null) player().setRepeatOne(mode == 2);
+        PlayerManager manager = player();
+        if (manager != null) manager.setRepeatOne(mode == 2);
         int icon = mode == 1 ? R.drawable.ic_audio_shuffle : mode == 2 ? R.drawable.ic_audio_repeat_one : R.drawable.ic_audio_repeat;
         binding.repeat.setImageResource(icon);
         binding.playlistRepeat.setImageResource(icon);
@@ -599,7 +628,7 @@ public class AudioActivity extends PlaybackActivity {
         lyricOffset = Math.max(-LYRIC_OFFSET_LIMIT, Math.min(LYRIC_OFFSET_LIMIT, lyricOffset + delta));
         saveLyricOffset();
         updateAudioToolState();
-        updateLyric(player() == null ? 0 : Math.max(0, player().getPosition()));
+        updateLyric(getPlayerPosition());
         Notify.show(lyricOffset == 0 ? "歌词偏移已重置" : String.format(Locale.getDefault(), "歌词%s %.1f 秒", lyricOffset > 0 ? "延后" : "提前", Math.abs(lyricOffset) / 1000f));
     }
 
@@ -607,7 +636,7 @@ public class AudioActivity extends PlaybackActivity {
         lyricOffset = 0;
         saveLyricOffset();
         updateAudioToolState();
-        updateLyric(player() == null ? 0 : Math.max(0, player().getPosition()));
+        updateLyric(getPlayerPosition());
         Notify.show("歌词偏移已重置");
     }
 
@@ -660,14 +689,16 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private void showLyricSearch() {
-        if (!lyricEnabled) return;
+        if (!lyricEnabled || !isActivityAlive()) return;
+        int request = lyricRequest;
         String title = getTitleText();
         String subtitle = getSubtitleText();
-        long duration = player() == null || player().getDuration() == C.TIME_UNSET ? 0 : player().getDuration();
+        long duration = getPlayerDuration();
         Notify.show("正在搜索歌词");
         Task.execute(() -> {
             List<LyricUtil.Option> options = LyricUtil.findOptions(title, subtitle, duration);
             App.post(() -> {
+                if (!isCurrentLyricSearch(request, title, subtitle)) return;
                 if (options.isEmpty()) {
                     Notify.show("没有找到可选歌词");
                     return;
@@ -676,24 +707,30 @@ public class AudioActivity extends PlaybackActivity {
                 for (int i = 0; i < options.size(); i++) labels[i] = options.get(i).getLabel();
                 new AlertDialog.Builder(this)
                         .setTitle("选择歌词")
-                        .setItems(labels, (dialog, which) -> applyManualLyric(options.get(which), title, subtitle, duration))
+                        .setItems(labels, (dialog, which) -> applyManualLyric(request, options.get(which), title, subtitle, duration))
                         .show();
             });
         });
     }
 
     private void showComments() {
-        long duration = service() == null || player() == null || player().isReleased() || player().getDuration() == C.TIME_UNSET ? 0 : player().getDuration();
-        AudioCommentDialog.create(getTitleText(), getSubtitleText(), duration).show(this);
+        if (!isActivityAlive()) return;
+        long duration = getPlayerDuration();
+        AudioCommentDialog.create(getDisplayTitleText(), getDisplaySubtitleText(), duration).show(this);
     }
 
-    private void applyManualLyric(LyricUtil.Option option, String title, String subtitle, long duration) {
+    private void applyManualLyric(int request, LyricUtil.Option option, String title, String subtitle, long duration) {
+        if (!isCurrentLyricSearch(request, title, subtitle)) return;
         LyricUtil.save(title, subtitle, duration, option.getLyric());
         lyricOffset = 0;
         saveLyricOffset();
-        applyLyrics(option.getLyric());
+        if (applyLyrics(option.getLyric())) rememberLyric(option.getLyric());
         updateAudioToolState();
         Notify.show("已应用歌词");
+    }
+
+    private boolean isCurrentLyricSearch(int request, String title, String subtitle) {
+        return isActivityAlive() && request == lyricRequest && TextUtils.equals(title, getTitleText()) && TextUtils.equals(subtitle, getSubtitleText());
     }
 
     private long getSavedLyricOffset() {
@@ -732,8 +769,9 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private void setText() {
-        binding.title.setText(getTitleText());
-        binding.subtitle.setText(getSubtitleText());
+        binding.title.setText(getDisplayTitleText());
+        binding.subtitle.setText(getDisplaySubtitleText());
+        binding.subtitle.setVisibility(TextUtils.isEmpty(getDisplaySubtitleText()) ? View.GONE : View.VISIBLE);
         if (!lyricEnabled) {
             setLyricTexts("", "", "", "", "");
             return;
@@ -756,14 +794,15 @@ public class AudioActivity extends PlaybackActivity {
             binding.backdrop.setImageResource(R.drawable.wallpaper_4);
             return;
         }
-        ImgUtil.load(getTitleText(), pic, binding.cover);
-        if (coverBackground) ImgUtil.load(getTitleText(), pic, binding.backdrop);
+        ImgUtil.load(getDisplayTitleText(), pic, binding.cover);
+        if (coverBackground) ImgUtil.load(getDisplayTitleText(), pic, binding.backdrop);
         else binding.backdrop.setImageResource(R.drawable.wallpaper_4);
     }
 
     private void updatePlayIcon() {
-        if (service() == null || player() == null || player().isReleased()) return;
-        binding.play.setImageResource(player().isPlaying() ? R.drawable.ic_audio_pause : R.drawable.ic_audio_play);
+        PlayerManager manager = player();
+        if (manager == null || manager.isReleased()) return;
+        binding.play.setImageResource(manager.isPlaying() ? R.drawable.ic_audio_pause : R.drawable.ic_audio_play);
     }
 
     private void updatePlayIcon(boolean isPlaying) {
@@ -778,7 +817,7 @@ public class AudioActivity extends PlaybackActivity {
         String lrc = result == null ? "" : result.getLrc();
         String title = getTitleText();
         String subtitle = getSubtitleText();
-        long duration = player() == null || player().getDuration() == C.TIME_UNSET ? 0 : player().getDuration();
+        long duration = getPlayerDuration();
         lyrics = new ArrayList<>();
         currentLyricIndex = 0;
         updateAudioToolState();
@@ -789,7 +828,7 @@ public class AudioActivity extends PlaybackActivity {
             String lyric = text;
             App.post(() -> {
                 if (request != lyricRequest) return;
-                applyLyrics(lyric);
+                if (applyLyrics(lyric)) rememberLyric(lyric);
             });
         });
     }
@@ -798,7 +837,7 @@ public class AudioActivity extends PlaybackActivity {
         int request = ++artworkRequest;
         String title = getTitleText();
         String subtitle = getSubtitleText();
-        long duration = player() == null || player().getDuration() == C.TIME_UNSET ? 0 : player().getDuration();
+        long duration = getPlayerDuration();
         Task.execute(() -> {
             String artwork = LyricUtil.findArtwork(title, subtitle, duration);
             App.post(() -> {
@@ -806,9 +845,14 @@ public class AudioActivity extends PlaybackActivity {
                 if (artwork.equals(getPic())) return;
                 getIntent().putExtra(EXTRA_PIC, artwork);
                 setCover();
-                if (player() != null) player().setMetadata(PlayerManager.buildMetadata(getTitleText(), getSubtitleText(), getPic()));
+                PlayerManager manager = player();
+                if (manager != null) manager.setMetadata(buildAudioMetadata());
             });
         });
+    }
+
+    private MediaMetadata buildAudioMetadata() {
+        return PlayerManager.buildMetadata(getDisplayTitleText(), getDisplaySubtitleText(), getPic());
     }
 
     private boolean applyLyrics(String lrc) {
@@ -822,9 +866,30 @@ public class AudioActivity extends PlaybackActivity {
             updateAudioToolState();
             return false;
         }
-        updateLyric(player() == null ? 0 : Math.max(0, player().getPosition()));
+        updateLyric(getPlayerPosition());
         updateAudioToolState();
         return true;
+    }
+
+    private void rememberLyric(String lrc) {
+        if (TextUtils.isEmpty(lrc)) return;
+        if (initialResult != null) initialResult.setLrc(lrc);
+    }
+
+    private long getPlayerPosition() {
+        PlayerManager manager = player();
+        return manager == null || manager.isReleased() ? 0 : Math.max(0, manager.getPosition());
+    }
+
+    private long getPlayerDuration() {
+        PlayerManager manager = player();
+        if (manager == null || manager.isReleased()) return 0;
+        long duration = manager.getDuration();
+        return duration == C.TIME_UNSET ? 0 : duration;
+    }
+
+    private boolean isActivityAlive() {
+        return !isFinishing() && !isDestroyed();
     }
 
     private List<Lyric> parseLyrics(String lrc) {
@@ -915,9 +980,10 @@ public class AudioActivity extends PlaybackActivity {
     }
 
     private void updateLyricAndHistory() {
-        if (service() == null || player() == null || player().isReleased()) return;
-        updateLyric(Math.max(0, player().getPosition()));
-        syncHistoryProgress();
+        PlayerManager manager = player();
+        if (manager == null || manager.isReleased()) return;
+        updateLyric(Math.max(0, manager.getPosition()));
+        syncHistoryProgress(manager);
     }
 
     private void updateLyric(long position) {
@@ -963,10 +1029,10 @@ public class AudioActivity extends PlaybackActivity {
         });
     }
 
-    private void syncHistoryProgress() {
+    private void syncHistoryProgress(PlayerManager manager) {
         if (Setting.isIncognito()) return;
-        long position = player().getPosition();
-        long duration = player().getDuration();
+        long position = manager.getPosition();
+        long duration = manager.getDuration();
         if (position <= 0 || duration <= 0) return;
         long now = System.currentTimeMillis();
         if (now - lastHistorySync < 5000) return;
@@ -1013,6 +1079,44 @@ public class AudioActivity extends PlaybackActivity {
         return TextUtils.isEmpty(title) ? "音频播放" : title;
     }
 
+    private String getDisplayTitleText() {
+        return getDisplayText().title;
+    }
+
+    private String getDisplaySubtitleText() {
+        return getDisplayText().subtitle;
+    }
+
+    private DisplayText getDisplayText() {
+        return buildDisplayText(getTitleText(), getSubtitleText());
+    }
+
+    private static DisplayText buildDisplayText(String title, String subtitle) {
+        String targetTitle = Objects.toString(title, "").trim();
+        String targetSubtitle = Objects.toString(subtitle, "").trim();
+        if (TextUtils.isEmpty(targetTitle)) targetTitle = "音频播放";
+        if (isGenericTitle(targetTitle) && !TextUtils.isEmpty(targetSubtitle)) return splitTrackText(targetSubtitle);
+        if (!TextUtils.isEmpty(targetSubtitle) && targetTitle.equals(targetSubtitle)) return splitTrackText(targetTitle);
+        return new DisplayText(targetTitle, targetSubtitle);
+    }
+
+    private static DisplayText splitTrackText(String text) {
+        String value = Objects.toString(text, "").trim();
+        String[] separators = {" - ", " -", "- ", " / ", "/", "·", "、"};
+        for (String separator : separators) {
+            int index = value.indexOf(separator);
+            if (index <= 0) continue;
+            String title = value.substring(0, index).trim();
+            String artist = value.substring(index + separator.length()).trim();
+            if (!TextUtils.isEmpty(title) && !TextUtils.isEmpty(artist)) return new DisplayText(title, artist);
+        }
+        return new DisplayText(value, "");
+    }
+
+    private static boolean isGenericTitle(String title) {
+        return TITLE_PLAYLIST_DETAIL.equals(Objects.toString(title, "").trim());
+    }
+
     private String getSubtitleText() {
         if (!episodes.isEmpty() && index >= 0 && index < episodes.size()) return episodes.get(index).getDisplayName();
         return Objects.toString(getIntent().getStringExtra(EXTRA_SUBTITLE), "");
@@ -1035,6 +1139,8 @@ public class AudioActivity extends PlaybackActivity {
 
     @Override
     protected void onDestroy() {
+        lyricRequest++;
+        artworkRequest++;
         App.removeCallbacks(ticker);
         App.removeCallbacks(lyricBrowseReturn);
         if (!TextUtils.isEmpty(objectCacheKey)) {
@@ -1114,6 +1220,17 @@ public class AudioActivity extends PlaybackActivity {
         private Lyric(long time, String text) {
             this.time = time;
             this.text = text;
+        }
+    }
+
+    private static final class DisplayText {
+
+        private final String title;
+        private final String subtitle;
+
+        private DisplayText(String title, String subtitle) {
+            this.title = Objects.toString(title, "");
+            this.subtitle = Objects.toString(subtitle, "");
         }
     }
 }

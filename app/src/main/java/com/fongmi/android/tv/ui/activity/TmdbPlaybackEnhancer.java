@@ -23,6 +23,8 @@ import java.util.regex.Pattern;
 
 public class TmdbPlaybackEnhancer {
 
+    private static final Pattern SOURCE_SEASON = Pattern.compile("(?i)(?:第\\s*([零〇一二三四五六七八九十两0-9]+)\\s*[季部]|season\\s*([0-9]{1,2})|s([0-9]{1,2})(?:[-._\\s]*e[0-9]{1,3})?)");
+
     public interface Host {
         String getKey();
 
@@ -66,12 +68,13 @@ public class TmdbPlaybackEnhancer {
             TmdbItem item = getCachedTmdbMatch();
             if (item == null) {
                 String title = searchTitle(vod);
+                String query = cleanTmdbSearchQuery(title);
                 int year = sourceYear(vod, title);
-                List<TmdbItem> items = tmdbService.search(title, tmdbConfig);
-                item = chooseTmdbMatch(items, title, year);
+                List<TmdbItem> items = tmdbService.search(query, tmdbConfig);
+                item = chooseTmdbMatch(items, query, year, title, vod);
                 if (item == null) {
                     SplitYearQuery split = splitYearQuery(title, vod);
-                    if (split != null) item = chooseTmdbMatch(tmdbService.search(split.query, tmdbConfig), split.query, split.year);
+                    if (split != null) item = chooseTmdbMatch(tmdbService.search(split.query, tmdbConfig), split.query, split.year, title, vod);
                 }
                 if (item != null) saveTmdbMatch(item);
             }
@@ -95,10 +98,11 @@ public class TmdbPlaybackEnhancer {
     }
 
     @Nullable
-    private TmdbItem chooseTmdbMatch(List<TmdbItem> items, String title, int year) {
+    private TmdbItem chooseTmdbMatch(List<TmdbItem> items, String title, int year, String sourceTitle, Vod vod) {
         if (items == null || items.isEmpty()) return null;
         String key = normalize(title);
-        for (TmdbItem item : items) if (normalize(item.getTitle()).equals(key) && yearMatches(item, year)) return item;
+        int season = sourceSeasonNumber(sourceTitle, vod);
+        for (TmdbItem item : items) if (normalize(item.getTitle()).equals(key) && (yearMatches(item, year) || tmdbSeasonYearMatches(item, season, year))) return item;
         if (year > 0) return null;
         for (TmdbItem item : items) if (normalize(item.getTitle()).contains(key) || key.contains(normalize(item.getTitle()))) return item;
         return items.get(0);
@@ -113,6 +117,20 @@ public class TmdbPlaybackEnhancer {
         return Objects.toString(text, "").replaceAll("[\\s·•:：\\-_/\\\\|()（）\\[\\]【】]+", "").trim().toLowerCase(Locale.ROOT);
     }
 
+    private String cleanTmdbSearchQuery(String text) {
+        String raw = Objects.toString(text, "").trim();
+        if (TextUtils.isEmpty(raw)) return "";
+        String cleaned = raw;
+        cleaned = cleaned.replaceAll("(?i)\\.(mkv|mp4|avi|mov|wmv|flv|rmvb|ts|m2ts)$", "");
+        cleaned = cleaned.replaceAll("(?i)\\b(S\\d{1,2}|Season\\s*\\d{1,2})\\b", " ");
+        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇两0-9]+\\s*[季部]", " ");
+        cleaned = cleaned.replaceAll("第\\s*[一二三四五六七八九十百零〇两0-9]+\\s*[集话話]", " ");
+        cleaned = cleaned.replaceAll("[._\\-+]+", " ");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("^[\\s:：,，.。·|/\\\\]+|[\\s:：,，.。·|/\\\\]+$", "");
+        return TextUtils.isEmpty(cleaned) ? raw : cleaned;
+    }
+
     private boolean yearMatches(TmdbItem item, int year) {
         if (year <= 0) return true;
         return tmdbItemYear(item) == year;
@@ -125,6 +143,23 @@ public class TmdbPlaybackEnhancer {
         if (year > 0) return year;
         year = firstYear(host.getName());
         return year > 0 ? year : firstYear(title);
+    }
+
+    private int sourceSeasonNumber(String title, Vod vod) {
+        int number = vod == null ? -1 : sourceSeasonNumber(vod.getName());
+        if (number > 0) return number;
+        number = sourceSeasonNumber(host.getName());
+        return number > 0 ? number : sourceSeasonNumber(title);
+    }
+
+    private int sourceSeasonNumber(String text) {
+        if (TextUtils.isEmpty(text)) return -1;
+        Matcher matcher = SOURCE_SEASON.matcher(text);
+        while (matcher.find()) {
+            int number = normalizeSourceNumber(firstNonEmptyGroup(matcher, 1, 2, 3));
+            if (number > 0) return number;
+        }
+        return -1;
     }
 
     @Nullable
@@ -144,12 +179,35 @@ public class TmdbPlaybackEnhancer {
         cleaned = cleaned.replaceAll("[\\[【「『(（]\\s*[\\]】」』)）]", " ");
         cleaned = cleaned.replaceAll("[._\\-+]+", " ");
         cleaned = cleaned.replaceAll("\\s+", " ").trim();
-        return cleaned.replaceAll("^[\\s:：,，.。·|/\\\\]+|[\\s:：,，.。·|/\\\\]+$", "");
+        cleaned = cleaned.replaceAll("^[\\s:：,，.。·|/\\\\]+|[\\s:：,，.。·|/\\\\]+$", "");
+        return cleanTmdbSearchQuery(cleaned);
     }
 
     private int tmdbItemYear(TmdbItem item) {
         int year = firstYear(item.getSubtitle());
         return year > 0 ? year : firstYear(item.getTitle());
+    }
+
+    private boolean tmdbSeasonYearMatches(TmdbItem item, int seasonNumber, int sourceYear) {
+        if (item == null || seasonNumber <= 0 || sourceYear <= 0 || !"tv".equalsIgnoreCase(item.getMediaType())) return false;
+        try {
+            JsonObject detail = tmdbService.detail(item, tmdbConfig);
+            return tmdbSeasonYear(detail, seasonNumber) == sourceYear;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private int tmdbSeasonYear(JsonObject detail, int seasonNumber) {
+        for (JsonElement element : array(detail, "seasons")) {
+            if (!element.isJsonObject()) continue;
+            JsonObject object = element.getAsJsonObject();
+            if (!object.has("season_number") || object.get("season_number").isJsonNull()) continue;
+            if (object.get("season_number").getAsInt() != seasonNumber) continue;
+            int year = firstYear(string(object, "air_date"));
+            return year > 0 ? year : firstYear(string(object, "name"));
+        }
+        return 0;
     }
 
     private int firstYear(String text) {
@@ -159,6 +217,76 @@ public class TmdbPlaybackEnhancer {
             if (year >= 1900 && year <= 2099) return year;
         }
         return 0;
+    }
+
+    private String firstNonEmptyGroup(Matcher matcher, int... groups) {
+        if (matcher == null || groups == null) return "";
+        for (int group : groups) {
+            String value = matcher.group(group);
+            if (!TextUtils.isEmpty(value)) return value;
+        }
+        return "";
+    }
+
+    private int normalizeSourceNumber(String value) {
+        if (TextUtils.isEmpty(value)) return -1;
+        value = value.trim();
+        try {
+            if (value.matches("\\d+")) return Integer.parseInt(value.replaceFirst("^0+(?!$)", ""));
+        } catch (Exception ignored) {
+            return -1;
+        }
+        int number = parseSmallChineseNumber(value);
+        return number > 0 ? number : -1;
+    }
+
+    private int parseSmallChineseNumber(String value) {
+        if (TextUtils.isEmpty(value)) return 0;
+        value = value.replace("两", "二").replace("零", "").replace("〇", "");
+        if (value.matches("[一二三四五六七八九]")) return chineseDigit(value.charAt(0));
+        int tenIndex = value.indexOf("十");
+        if (tenIndex >= 0) {
+            int tens = tenIndex == 0 ? 1 : chineseDigit(value.charAt(tenIndex - 1));
+            int ones = tenIndex == value.length() - 1 ? 0 : chineseDigit(value.charAt(tenIndex + 1));
+            return tens * 10 + ones;
+        }
+        return 0;
+    }
+
+    private int chineseDigit(char value) {
+        return switch (value) {
+            case '一' -> 1;
+            case '二' -> 2;
+            case '三' -> 3;
+            case '四' -> 4;
+            case '五' -> 5;
+            case '六' -> 6;
+            case '七' -> 7;
+            case '八' -> 8;
+            case '九' -> 9;
+            default -> 0;
+        };
+    }
+
+    private JsonArray array(JsonObject object, String... keys) {
+        JsonElement current = object;
+        for (String key : keys) {
+            if (current == null || !current.isJsonObject()) return new JsonArray();
+            JsonObject currentObject = current.getAsJsonObject();
+            if (!currentObject.has(key) || currentObject.get(key).isJsonNull()) return new JsonArray();
+            current = currentObject.get(key);
+        }
+        return current != null && current.isJsonArray() ? current.getAsJsonArray() : new JsonArray();
+    }
+
+    private String string(JsonObject object, String... keys) {
+        for (String key : keys) {
+            if (object != null && object.has(key) && !object.get(key).isJsonNull()) {
+                String value = object.get(key).getAsString();
+                if (!TextUtils.isEmpty(value)) return value.trim();
+            }
+        }
+        return "";
     }
 
     private static class SplitYearQuery {
