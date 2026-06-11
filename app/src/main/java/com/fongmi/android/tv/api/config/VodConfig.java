@@ -168,7 +168,7 @@ public class VodConfig extends BaseConfig {
         if (Json.isEmpty(object, "lives")) return;
         Config temp = Config.find(config, LIVE).save();
         boolean sync = LiveConfig.get().needSync(config.getUrl());
-        if (sync) LiveConfig.get().config(temp.update()).parse(object);
+        if (sync) LiveConfig.get().config(temp).parse(object);
     }
 
     private void initWall(Config config, JsonObject object) {
@@ -176,7 +176,7 @@ public class VodConfig extends BaseConfig {
         this.wall = Json.safeString(object, "wallpaper");
         Config temp = Config.find(wall, config.getName(), WALL).save();
         boolean sync = WallConfig.get().needSync(wall);
-        if (sync) WallConfig.get().config(temp.update());
+        if (sync) WallConfig.get().config(temp);
     }
 
     private void initSite(Config config, JsonObject object) {
