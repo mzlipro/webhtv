@@ -234,6 +234,11 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private int statusBarInsetTop;
     private int detailThemeMode;
     private int loadGeneration;
+    private int inlinePlaybackGeneration;
+    private int tmdbDialogGeneration;
+    private int tmdbApplyGeneration;
+    private int tmdbEpisodeDetailGeneration;
+    private int sourceSearchGeneration;
     private int backdropSlideGeneration;
     private int backdropSlideIndex;
     private boolean episodeGridMode;
@@ -385,6 +390,12 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         inlineStarted = false;
         detailPlayerActive = false;
         autoPlayed = false;
+        inlinePlaybackGeneration++;
+        tmdbDialogGeneration++;
+        tmdbApplyGeneration++;
+        tmdbEpisodeDetailGeneration++;
+        sourceSearchGeneration++;
+        inlinePlaybackLoading = false;
         inlineStartPosition = C.TIME_UNSET;
         pendingInlineResult = null;
         currentInlineResult = null;
@@ -458,6 +469,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         episodeAdapter = new TmdbEpisodeAdapter(new TmdbEpisodeAdapter.Listener() {
             @Override
             public void onItemClick(Episode episode) {
+                cancelPendingInlinePlayback();
                 selectedEpisode = episode;
                 episodeAdapter.setSelected(episode);
                 updatePlayLabel();
@@ -1261,6 +1273,33 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         });
     }
 
+    private boolean isTmdbRequestCurrent(int generation, @Nullable TmdbItem item) {
+        return generation == loadGeneration && isSameTmdbItem(item, matchedTmdbItem);
+    }
+
+    private boolean isSameTmdbItem(@Nullable TmdbItem first, @Nullable TmdbItem second) {
+        if (first == second) return true;
+        if (first == null || second == null) return false;
+        return first.getTmdbId() == second.getTmdbId() && TextUtils.equals(first.getMediaType(), second.getMediaType());
+    }
+
+    private boolean isInlinePlaybackRequestCurrent(int generation, String key, String flag, String episodeUrl) {
+        return generation == inlinePlaybackGeneration
+                && TextUtils.equals(key, getKeyText())
+                && selectedFlag != null
+                && TextUtils.equals(flag, selectedFlag.getFlag())
+                && selectedEpisode != null
+                && TextUtils.equals(episodeUrl, selectedEpisode.getUrl());
+    }
+
+    private void cancelPendingInlinePlayback() {
+        if (!inlinePlaybackLoading) return;
+        inlinePlaybackGeneration++;
+        inlinePlaybackLoading = false;
+        binding.playerProgress.setVisibility(View.GONE);
+        updateInlineDisplayPanel();
+    }
+
     private void applyLoaded(Vod loadedVod, TmdbBundle bundle, List<TmdbItem> searchItems, String error) {
         applyLoaded(loadedVod, bundle, searchItems, error, true);
     }
@@ -1464,15 +1503,21 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             return;
         }
         binding.loading.setVisibility(View.VISIBLE);
+        int generation = loadGeneration;
+        int dialogGeneration = ++tmdbDialogGeneration;
+        String query = getTmdbSearchQuery();
+        String fallback = getNameText();
         Task.execute(() -> {
             try {
-                List<TmdbItem> items = searchTmdbItems(getTmdbSearchQuery(), getNameText());
+                List<TmdbItem> items = searchTmdbItems(query, fallback);
                 runOnAliveUi(() -> {
+                    if (generation != loadGeneration || dialogGeneration != tmdbDialogGeneration) return;
                     binding.loading.setVisibility(View.GONE);
                     showTmdbMatchDialog(items, false);
                 });
             } catch (Throwable e) {
                 runOnAliveUi(() -> {
+                    if (generation != loadGeneration || dialogGeneration != tmdbDialogGeneration) return;
                     binding.loading.setVisibility(View.GONE);
                     Notify.show(TextUtils.isEmpty(e.getMessage()) ? getString(R.string.detail_tmdb_empty) : e.getMessage());
                 });
@@ -1512,13 +1557,19 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void searchTmdb(String keyword, TmdbSearchDialog dialog) {
         dialog.loading();
+        int generation = loadGeneration;
+        int dialogGeneration = ++tmdbDialogGeneration;
         Task.execute(() -> {
             try {
                 String query = cleanTmdbSearchQuery(keyword);
                 List<TmdbItem> items = searchTmdbItems(query, keyword);
-                runOnAliveUi(() -> dialog.updateItems(items));
+                runOnAliveUi(() -> {
+                    if (generation != loadGeneration || dialogGeneration != tmdbDialogGeneration) return;
+                    dialog.updateItems(items);
+                });
             } catch (Throwable e) {
                 runOnAliveUi(() -> {
+                    if (generation != loadGeneration || dialogGeneration != tmdbDialogGeneration) return;
                     dialog.updateItems(new ArrayList<>());
                     Notify.show(TextUtils.isEmpty(e.getMessage()) ? getString(R.string.detail_tmdb_empty) : e.getMessage());
                 });
@@ -1528,10 +1579,15 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void applyManualTmdb(TmdbItem item) {
         binding.loading.setVisibility(View.VISIBLE);
+        int generation = loadGeneration;
+        int applyGeneration = ++tmdbApplyGeneration;
+        tmdbDialogGeneration++;
+        sourceSearchGeneration++;
         Task.execute(() -> {
             try {
                 TmdbBundle bundle = loadTmdbBundle(item);
                 runOnAliveUi(() -> {
+                    if (generation != loadGeneration || applyGeneration != tmdbApplyGeneration || vod == null) return;
                     binding.loading.setVisibility(View.GONE);
                     applyTmdbBundle(bundle);
                     saveTmdbMatch(item);
@@ -1542,6 +1598,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 });
             } catch (Throwable e) {
                 runOnAliveUi(() -> {
+                    if (generation != loadGeneration || applyGeneration != tmdbApplyGeneration) return;
                     binding.loading.setVisibility(View.GONE);
                     Notify.show(TextUtils.isEmpty(e.getMessage()) ? getString(R.string.detail_tmdb_empty) : e.getMessage());
                 });
@@ -1908,6 +1965,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             MaterialButton button = createChipButton(flag.getShow());
             setChipState(button, flag.equals(currentFlag));
             button.setOnClickListener(view -> {
+                cancelPendingInlinePlayback();
                 selectedFlag = flag;
                 selectedEpisode = null;
                 selectedSeasonNumber = -1;
@@ -2043,6 +2101,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             MaterialButton button = createChipButton(getString(R.string.detail_season_format, season));
             setChipState(button, season == selectedSeasonNumber);
             button.setOnClickListener(view -> {
+                cancelPendingInlinePlayback();
                 selectedSeasonNumber = season;
                 List<Episode> visibleEpisodes = visibleEpisodes(selectedFlag.getEpisodes());
                 selectedEpisode = visibleEpisodes.isEmpty() ? null : visibleEpisodes.get(0);
@@ -2066,15 +2125,20 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void fetchSeasonIfNeeded(int seasonNumber) {
         if (seasonNumber < 0 || tmdbSeasonEpisodes.containsKey(seasonNumber) || loadingSeasons.contains(seasonNumber) || matchedTmdbItem == null || !"tv".equalsIgnoreCase(matchedTmdbItem.getMediaType()) || !canMatchTmdb()) return;
+        int generation = loadGeneration;
+        TmdbItem item = matchedTmdbItem;
+        JsonObject detail = matchedTmdbDetail;
+        TmdbConfig config = tmdbConfig;
         loadingSeasons.add(seasonNumber);
         updateEpisodeSkeleton();
         Task.execute(() -> {
             try {
-                JsonObject season = tmdbService.season(matchedTmdbItem, seasonNumber, tmdbConfig, matchedTmdbDetail);
-                List<TmdbEpisode> episodes = tmdbService.episodes(season, tmdbConfig);
-                List<TmdbPerson> cast = tmdbService.seasonCast(season, tmdbConfig);
-                List<String> photos = tmdbService.seasonPhotos(season, tmdbConfig);
+                JsonObject season = tmdbService.season(item, seasonNumber, config, detail);
+                List<TmdbEpisode> episodes = tmdbService.episodes(season, config);
+                List<TmdbPerson> cast = tmdbService.seasonCast(season, config);
+                List<String> photos = tmdbService.seasonPhotos(season, config);
                 runOnAliveUi(() -> {
+                    if (!isTmdbRequestCurrent(generation, item)) return;
                     loadingSeasons.remove(seasonNumber);
                     tmdbSeasonEpisodes.put(seasonNumber, episodes);
                     tmdbSeasonCast.put(seasonNumber, cast);
@@ -2083,6 +2147,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 });
             } catch (Throwable ignored) {
                 runOnAliveUi(() -> {
+                    if (!isTmdbRequestCurrent(generation, item)) return;
                     loadingSeasons.remove(seasonNumber);
                     updateEpisodeSkeleton();
                 });
@@ -2338,18 +2403,28 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             return;
         }
         binding.loading.setVisibility(View.VISIBLE);
+        int generation = loadGeneration;
+        int detailGeneration = ++tmdbEpisodeDetailGeneration;
+        int seasonNumber = selectedSeasonNumber;
+        TmdbItem item = matchedTmdbItem;
+        JsonObject baseDetail = matchedTmdbDetail;
+        TmdbConfig config = tmdbConfig;
         Task.execute(() -> {
             try {
-                JsonObject detail = tmdbService.episode(matchedTmdbItem, selectedSeasonNumber, episodeNumber, tmdbConfig, matchedTmdbDetail);
-                List<String> photos = tmdbService.episodePhotos(detail, tmdbConfig);
-                List<TmdbPerson> guests = tmdbService.episodeGuests(detail, tmdbConfig);
+                JsonObject detail = tmdbService.episode(item, seasonNumber, episodeNumber, config, baseDetail);
+                List<String> photos = tmdbService.episodePhotos(detail, config);
+                List<TmdbPerson> guests = tmdbService.episodeGuests(detail, config);
                 runOnAliveUi(() -> {
+                    if (!isTmdbRequestCurrent(generation, item) || detailGeneration != tmdbEpisodeDetailGeneration) return;
                     binding.loading.setVisibility(View.GONE);
+                    if (seasonNumber != selectedSeasonNumber) return;
                     showTmdbEpisodeDialog(episode, episodeNumber, detail, photos, guests);
                 });
             } catch (Throwable e) {
                 runOnAliveUi(() -> {
+                    if (!isTmdbRequestCurrent(generation, item) || detailGeneration != tmdbEpisodeDetailGeneration) return;
                     binding.loading.setVisibility(View.GONE);
+                    if (seasonNumber != selectedSeasonNumber) return;
                     Notify.show(TextUtils.isEmpty(e.getMessage()) ? getString(R.string.detail_tmdb_empty) : e.getMessage());
                 });
             }
@@ -2906,16 +2981,27 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerError.setVisibility(View.GONE);
         binding.playerProgress.setVisibility(View.VISIBLE);
         inlinePlaybackLoading = true;
+        int generation = ++inlinePlaybackGeneration;
+        String key = getKeyText();
+        String flag = selectedFlag.getFlag();
+        String episodeUrl = selectedEpisode.getUrl();
         stopInlinePlayerForReload();
         updateInlineDisplayPanel();
         showInlineControls(true);
         updateInlineTitle();
         Task.execute(() -> {
             try {
-                Result result = SiteApi.playerContent(getKeyText(), selectedFlag.getFlag(), selectedEpisode.getUrl());
-                runOnUiThread(() -> startInlinePlayer(result));
+                Result result = SiteApi.playerContent(key, flag, episodeUrl);
+                runOnAliveUi(() -> {
+                    if (!isInlinePlaybackRequestCurrent(generation, key, flag, episodeUrl)) return;
+                    startInlinePlayer(result);
+                });
             } catch (Throwable e) {
-                runOnUiThread(() -> showInlineError(TextUtils.isEmpty(e.getMessage()) ? getString(R.string.error_play_url) : e.getMessage()));
+                String message = e.getMessage();
+                runOnAliveUi(() -> {
+                    if (!isInlinePlaybackRequestCurrent(generation, key, flag, episodeUrl)) return;
+                    showInlineError(TextUtils.isEmpty(message) ? getString(R.string.error_play_url) : message);
+                });
             }
         });
     }
@@ -4097,6 +4183,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private void selectInlineEpisode(Episode episode) {
+        cancelPendingInlinePlayback();
         selectedEpisode = episode;
         selectedSeasonNumber = seasonForEpisode(episode, selectedFlag.getEpisodes());
         renderSeasonSelection();
@@ -4323,6 +4410,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void closeDetailFullscreenPlayer() {
         saveInlineHistory();
+        inlinePlaybackGeneration++;
+        inlinePlaybackLoading = false;
         hideInlineControls();
         if (service() != null) {
             player().stop();
@@ -4356,6 +4445,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             if (notify) Notify.show(direction > 0 ? R.string.error_play_next : R.string.error_play_prev);
             return false;
         }
+        cancelPendingInlinePlayback();
         selectedEpisode = episodes.get(next);
         selectedSeasonNumber = seasonForEpisode(selectedEpisode, episodes);
         renderEpisodes();
@@ -4659,6 +4749,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (inlineFullscreen) exitInlineFullscreen();
         cancelBackdropSlideRequest();
         App.removeCallbacks(inlineHideControls);
+        App.removeCallbacks(inlineKeySeekEnd);
         saveInlineHistory();
         if (inlineClock != null) inlineClock.release();
         DanmakuApi.cancel();
@@ -4808,10 +4899,13 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private void changeSource() {
         if (vod == null) return;
         String keyword = getSourceSearchKeyword();
+        int generation = loadGeneration;
+        int searchGeneration = ++sourceSearchGeneration;
         Notify.show(getString(R.string.detail_source_searching));
         Task.execute(() -> {
             SourceMatch match = searchChangeSource(keyword);
             runOnAliveUi(() -> {
+                if (generation != loadGeneration || searchGeneration != sourceSearchGeneration || vod == null) return;
                 if (match == null) {
                     Notify.show(R.string.detail_source_empty);
                     return;
@@ -4849,10 +4943,13 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             Notify.show(R.string.detail_site_not_searchable);
             return;
         }
+        int generation = loadGeneration;
+        int searchGeneration = ++sourceSearchGeneration;
         Notify.show(getString(R.string.detail_work_searching, item.getTitle()));
         Task.execute(() -> {
             Vod match = searchCurrentSite(item.getTitle(), site);
             runOnAliveUi(() -> {
+                if (generation != loadGeneration || searchGeneration != sourceSearchGeneration) return;
                 if (match == null) {
                     Notify.show(getString(R.string.detail_work_global_searching, item.getTitle()));
                     SearchActivity.direct(this, item.getTitle());
