@@ -300,6 +300,7 @@
     <string name="setting_home_menu_key">Home menu key</string>
     <string name="setting_play_back_to_detail">Return playback to detail</string>
     <string name="setting_tmdb_match_mode">TMDB match mode</string>
+    <string name="setting_tmdb_backdrop_slide">TMDB backdrop slideshow</string>
     <string name="setting_home_history">Home recent history</string>
     <string name="setting_drive_check">Drive link check</string>
     <string name="setting_search_thread">Search threads</string>

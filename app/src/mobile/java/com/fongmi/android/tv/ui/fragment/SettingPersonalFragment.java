@@ -45,6 +45,7 @@ public class SettingPersonalFragment extends BaseFragment {
     protected void initEvent() {
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.tmdbMatchMode.setOnClickListener(this::setTmdbMatchMode);
+        mBinding.tmdbBackdropSlide.setOnClickListener(this::setTmdbBackdropSlide);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
         mBinding.searchColumn.setOnClickListener(this::setSearchColumn);
         mBinding.siteColumn.setOnClickListener(this::setSiteColumn);
@@ -54,6 +55,7 @@ public class SettingPersonalFragment extends BaseFragment {
     private void setText() {
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.tmdbMatchModeText.setText((tmdbMatchMode = getResources().getStringArray(R.array.select_tmdb_match_mode))[Setting.getTmdbMatchMode()]);
+        mBinding.tmdbBackdropSlideText.setText(getSwitch(Setting.isTmdbDetailBackdropSlide()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
         mBinding.searchColumnText.setText((searchColumn = getResources().getStringArray(R.array.select_search_column))[Setting.getSearchColumn()]);
         mBinding.siteColumnText.setText((siteColumn = getResources().getStringArray(R.array.select_site_column))[Setting.getSiteColumn() - 1]);
@@ -84,6 +86,11 @@ public class SettingPersonalFragment extends BaseFragment {
 
     private void setTmdbMatchMode(View view) {
         Setting.putTmdbMatchMode((Setting.getTmdbMatchMode() + 1) % tmdbMatchMode.length);
+        setText();
+    }
+
+    private void setTmdbBackdropSlide(View view) {
+        Setting.putTmdbDetailBackdropSlide(!Setting.isTmdbDetailBackdropSlide());
         setText();
     }
 

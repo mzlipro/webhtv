@@ -516,6 +516,14 @@ public class Setting {
         Prefers.put("tmdb_detail_theme", Math.max(0, Math.min(theme, 2)));
     }
 
+    public static boolean isTmdbDetailBackdropSlide() {
+        return Prefers.getBoolean("tmdb_detail_backdrop_slide", true);
+    }
+
+    public static void putTmdbDetailBackdropSlide(boolean enabled) {
+        Prefers.put("tmdb_detail_backdrop_slide", enabled);
+    }
+
     public static boolean getUpdate() {
         return Prefers.getBoolean("update", true);
     }

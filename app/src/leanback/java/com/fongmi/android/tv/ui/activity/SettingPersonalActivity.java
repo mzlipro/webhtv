@@ -52,6 +52,7 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.homeMenuKey.setOnClickListener(this::setHomeMenuKey);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.tmdbMatchMode.setOnClickListener(this::setTmdbMatchMode);
+        mBinding.tmdbBackdropSlide.setOnClickListener(this::setTmdbBackdropSlide);
         mBinding.homeHistory.setOnClickListener(this::setHomeHistory);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
         mBinding.searchColumn.setOnClickListener(this::setSearchColumn);
@@ -65,6 +66,7 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.homeMenuKeyText.setText((homeMenuKey = getResources().getStringArray(R.array.select_home_menu_key))[Setting.getHomeMenuKey()]);
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.tmdbMatchModeText.setText((tmdbMatchMode = getResources().getStringArray(R.array.select_tmdb_match_mode))[Setting.getTmdbMatchMode()]);
+        mBinding.tmdbBackdropSlideText.setText(getSwitch(Setting.isTmdbDetailBackdropSlide()));
         mBinding.homeHistoryText.setText(getSwitch(Setting.isHomeHistory()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
         mBinding.searchColumnText.setText(getSearchColumnText());
@@ -119,6 +121,11 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setTmdbMatchMode(View view) {
         Setting.putTmdbMatchMode((Setting.getTmdbMatchMode() + 1) % tmdbMatchMode.length);
+        setText();
+    }
+
+    private void setTmdbBackdropSlide(View view) {
+        Setting.putTmdbDetailBackdropSlide(!Setting.isTmdbDetailBackdropSlide());
         setText();
     }
 

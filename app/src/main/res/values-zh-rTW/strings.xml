@@ -299,6 +299,7 @@
     <string name="setting_home_menu_key">首頁選單鍵</string>
     <string name="setting_play_back_to_detail">播放返回詳情頁</string>
     <string name="setting_tmdb_match_mode">TMDB 匹配模式</string>
+    <string name="setting_tmdb_backdrop_slide">TMDB 背景海報輪播</string>
     <string name="setting_home_history">首頁最近觀看</string>
     <string name="setting_drive_check">網盤檢測</string>
     <string name="setting_search_thread">搜索線程</string>

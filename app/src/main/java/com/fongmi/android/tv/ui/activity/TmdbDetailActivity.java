@@ -107,7 +107,11 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.CustomTarget;
+import com.bumptech.glide.request.target.Target;
 import com.bumptech.glide.request.transition.Transition;
 import com.github.catvod.crawler.SpiderDebug;
 import com.google.gson.JsonArray;
@@ -142,6 +146,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private static final int FOCUS_STROKE_DP = 3;
     private static final int CHIP_STROKE_DP = 1;
     private static final int PHOTO_PRELOAD_RADIUS = 2;
+    private static final long BACKDROP_SLIDE_DELAY_MS = 10_000L;
+    private static final long BACKDROP_SLIDE_RETRY_MS = 2_500L;
     private static final int SHORT_DRAMA_SCALE = 0;
     private static final int SHORT_DRAMA_FRAME_WIDTH = 9;
     private static final int SHORT_DRAMA_FRAME_HEIGHT = 16;
@@ -165,6 +171,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private final Set<Integer> loadingSeasons = new HashSet<>();
     private final List<String> detailTmdbPhotos = new ArrayList<>();
     private final List<String> tmdbEpisodePhotos = new ArrayList<>();
+    private final List<String> backdropSlideItems = new ArrayList<>();
+    private final Set<String> backdropSlideFailures = new HashSet<>();
+    private final Runnable backdropSlideNext = this::loadNextBackdropSlide;
 
     private ActivityTmdbDetailBinding binding;
     @androidx.annotation.Keep
@@ -225,11 +234,18 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private int statusBarInsetTop;
     private int detailThemeMode;
     private int loadGeneration;
+    private int backdropSlideGeneration;
+    private int backdropSlideIndex;
     private boolean episodeGridMode;
     private boolean episodeReverse;
     private boolean scrollEpisodeStartOnce;
     private boolean tmdbMediaLoading;
     private boolean lightTheme;
+    private boolean backdropSlideLoading;
+    private String backdropSlideTitle = "";
+    private String backdropSlidePrimary = "";
+    private ImageView backdropSlideVisibleView;
+    private ImageView backdropSlideLoadingView;
 
     public static void start(Activity activity, String key, String id, String name, String pic, String mark) {
         start(activity, key, id, name, pic, mark, null);
@@ -374,6 +390,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         currentInlineResult = null;
         activeTmdbBundle = null;
         useParse = false;
+        detailTmdbPhotos.clear();
+        tmdbEpisodePhotos.clear();
         if (service() != null) {
             player().stop();
             player().clear();
@@ -877,8 +895,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (isCinemaMode()) colors = ThemeColors.cinema();
         binding.root.setBackgroundColor(colors.background);
         binding.hero.setBackgroundColor(colors.background);
-        binding.backdropFill.setAlpha(isCinemaMode() ? 0.9f : 1f);
-        binding.backdrop.setAlpha(isCinemaMode() ? 0.24f : lightTheme ? 0.92f : 1f);
+        binding.backdropFill.setAlpha(backdropSlideAlpha());
+        binding.backdrop.setAlpha(backdropSlideAlpha());
         binding.backdropShade.setBackground(isCinemaMode() ? cinemaBackdropShade() : colorDrawable(colors.backdropShade));
         setCard(binding.contentPanel, colors.panel, colors.line);
         setPlayerCard(colors);
@@ -1378,6 +1396,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
                 relatedItems.addAll(finalRelated);
                 detailTmdbPhotos.clear();
                 detailTmdbPhotos.addAll(finalPhotos);
+                refreshBackdropSlideshow();
                 bindSeasonTmdbMedia(selectedSeasonNumber);
                 bindTmdbSection();
             });
@@ -1577,14 +1596,184 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         boolean hasBackdrop = !TextUtils.isEmpty(backdrop) && !TextUtils.equals(backdrop, fallback);
         String image = hasBackdrop ? backdrop : fallback;
         binding.hero.setVisibility(TextUtils.isEmpty(image) ? View.GONE : View.VISIBLE);
+        cancelBackdropSlideRequest();
         if (TextUtils.isEmpty(image)) {
             ImgUtil.clear(binding.backdropFill);
             ImgUtil.clear(binding.backdrop);
+            binding.backdrop.setVisibility(View.INVISIBLE);
+            backdropSlideVisibleView = binding.backdropFill;
+            bindBackdropSlideSource(title, "");
             return;
         }
-        ImgUtil.load(title, image, binding.backdropFill);
-        binding.backdrop.setVisibility(View.GONE);
+        showStaticBackdropImage(title, image);
+        bindBackdropSlideSource(title, image);
+    }
+
+    private void showStaticBackdropImage(String title, String image) {
+        backdropSlideVisibleView = binding.backdropFill;
+        binding.backdropFill.setVisibility(View.VISIBLE);
+        binding.backdropFill.setAlpha(backdropSlideAlpha());
+        binding.backdrop.setVisibility(View.INVISIBLE);
         ImgUtil.clear(binding.backdrop);
+        ImgUtil.load(title, image, binding.backdropFill);
+    }
+
+    private void bindBackdropSlideSource(String title, String image) {
+        backdropSlideTitle = TextUtils.isEmpty(title) ? "" : title;
+        backdropSlidePrimary = TextUtils.isEmpty(image) ? "" : image;
+        refreshBackdropSlideshow();
+    }
+
+    private void refreshBackdropSlideshow() {
+        String current = currentBackdropSlideImage();
+        cancelBackdropSlideRequest();
+        backdropSlideItems.clear();
+        backdropSlideFailures.clear();
+        addBackdropSlideItem(backdropSlidePrimary);
+        for (String photo : detailTmdbPhotos) addBackdropSlideItem(photo);
+        if (TextUtils.isEmpty(backdropSlidePrimary) && !backdropSlideItems.isEmpty()) {
+            backdropSlidePrimary = backdropSlideItems.get(0);
+            current = backdropSlidePrimary;
+            binding.hero.setVisibility(View.VISIBLE);
+            showStaticBackdropImage(backdropSlideTitle, backdropSlidePrimary);
+        }
+        backdropSlideIndex = Math.max(0, backdropSlideItems.indexOf(current));
+        scheduleBackdropSlide(BACKDROP_SLIDE_DELAY_MS);
+    }
+
+    private void addBackdropSlideItem(String url) {
+        if (TextUtils.isEmpty(url) || backdropSlideItems.contains(url)) return;
+        backdropSlideItems.add(url);
+    }
+
+    private String currentBackdropSlideImage() {
+        Object tag = visibleBackdropSlideView().getTag(R.id.image);
+        return tag instanceof String ? (String) tag : backdropSlidePrimary;
+    }
+
+    private void scheduleBackdropSlide(long delayMillis) {
+        App.removeCallbacks(backdropSlideNext);
+        if (!canRunBackdropSlideshow()) return;
+        App.post(backdropSlideNext, delayMillis);
+    }
+
+    private boolean canRunBackdropSlideshow() {
+        return binding != null && canTouchUi() && Setting.isTmdbDetailBackdropSlide() && backdropSlideItems.size() > 1 && binding.hero.getVisibility() == View.VISIBLE;
+    }
+
+    private void loadNextBackdropSlide() {
+        if (!canRunBackdropSlideshow() || backdropSlideLoading) return;
+        int next = nextBackdropSlideIndex();
+        if (next < 0 || next >= backdropSlideItems.size()) return;
+        String url = backdropSlideItems.get(next);
+        Object model = ImgUtil.getUrl(url);
+        if (model == null) {
+            onBackdropSlideFailed(++backdropSlideGeneration, next, url);
+            return;
+        }
+        int generation = ++backdropSlideGeneration;
+        ImageView targetView = hiddenBackdropSlideView();
+        prepareBackdropSlideTarget(targetView);
+        backdropSlideLoading = true;
+        backdropSlideLoadingView = targetView;
+        try {
+            Glide.with(this)
+                    .load(model)
+                    .centerCrop()
+                    .listener(new RequestListener<Drawable>() {
+                        @Override
+                        public boolean onLoadFailed(@Nullable GlideException e, Object model, @NonNull Target<Drawable> target, boolean isFirstResource) {
+                            targetView.post(() -> onBackdropSlideFailed(generation, next, url));
+                            return false;
+                        }
+
+                        @Override
+                        public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target, DataSource dataSource, boolean isFirstResource) {
+                            targetView.post(() -> onBackdropSlideReady(generation, next, url, targetView));
+                            return false;
+                        }
+                    })
+                    .into(targetView);
+        } catch (Throwable ignored) {
+            onBackdropSlideFailed(generation, next, url);
+        }
+    }
+
+    private void prepareBackdropSlideTarget(ImageView targetView) {
+        targetView.setVisibility(View.INVISIBLE);
+        targetView.setAlpha(backdropSlideAlpha());
+        targetView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        ImgUtil.clear(targetView);
+    }
+
+    private void onBackdropSlideReady(int generation, int index, String url, ImageView targetView) {
+        if (!isBackdropSlideRequestCurrent(generation, index, url) || targetView != backdropSlideLoadingView) return;
+        ImageView oldView = visibleBackdropSlideView();
+        backdropSlideLoadingView = null;
+        backdropSlideLoading = false;
+        backdropSlideFailures.remove(url);
+        backdropSlideIndex = index;
+        backdropSlideVisibleView = targetView;
+        targetView.setTag(R.id.image, url);
+        targetView.setAlpha(backdropSlideAlpha());
+        targetView.setVisibility(View.VISIBLE);
+        if (oldView != targetView) {
+            oldView.setVisibility(View.INVISIBLE);
+            ImgUtil.clear(oldView);
+        }
+        scheduleBackdropSlide(BACKDROP_SLIDE_DELAY_MS);
+    }
+
+    private ImageView visibleBackdropSlideView() {
+        return backdropSlideVisibleView == binding.backdrop ? binding.backdrop : binding.backdropFill;
+    }
+
+    private ImageView hiddenBackdropSlideView() {
+        return visibleBackdropSlideView() == binding.backdrop ? binding.backdropFill : binding.backdrop;
+    }
+
+    private float backdropSlideAlpha() {
+        return isCinemaMode() ? 0.9f : 1f;
+    }
+
+    private int nextBackdropSlideIndex() {
+        int count = backdropSlideItems.size();
+        if (count <= 1) return -1;
+        for (int offset = 1; offset < count; offset++) {
+            int index = (backdropSlideIndex + offset) % count;
+            String url = backdropSlideItems.get(index);
+            if (!backdropSlideFailures.contains(url)) return index;
+        }
+        backdropSlideFailures.clear();
+        return (backdropSlideIndex + 1) % count;
+    }
+
+    private boolean isBackdropSlideRequestCurrent(int generation, int index, String url) {
+        return generation == backdropSlideGeneration && canRunBackdropSlideshow() && index >= 0 && index < backdropSlideItems.size() && TextUtils.equals(url, backdropSlideItems.get(index));
+    }
+
+    private void onBackdropSlideFailed(int generation, int index, String url) {
+        if (!isBackdropSlideRequestCurrent(generation, index, url)) return;
+        backdropSlideLoading = false;
+        clearBackdropSlideLoadingView();
+        backdropSlideFailures.add(url);
+        backdropSlideIndex = index;
+        scheduleBackdropSlide(BACKDROP_SLIDE_RETRY_MS);
+    }
+
+    private void cancelBackdropSlideRequest() {
+        App.removeCallbacks(backdropSlideNext);
+        backdropSlideGeneration++;
+        backdropSlideLoading = false;
+        clearBackdropSlideLoadingView();
+    }
+
+    private void clearBackdropSlideLoadingView() {
+        ImageView targetView = backdropSlideLoadingView;
+        backdropSlideLoadingView = null;
+        if (targetView == null || targetView == visibleBackdropSlideView()) return;
+        targetView.setVisibility(View.INVISIBLE);
+        ImgUtil.clear(targetView);
     }
 
     private String tmdbBackdropUrl() {
@@ -4454,8 +4643,21 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        scheduleBackdropSlide(BACKDROP_SLIDE_DELAY_MS);
+    }
+
+    @Override
+    protected void onPause() {
+        cancelBackdropSlideRequest();
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
         if (inlineFullscreen) exitInlineFullscreen();
+        cancelBackdropSlideRequest();
         App.removeCallbacks(inlineHideControls);
         saveInlineHistory();
         if (inlineClock != null) inlineClock.release();
