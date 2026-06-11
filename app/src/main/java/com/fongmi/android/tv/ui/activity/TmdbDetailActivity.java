@@ -169,6 +169,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private final Map<Integer, List<TmdbPerson>> tmdbSeasonCast = new HashMap<>();
     private final Map<Integer, List<String>> tmdbSeasonPhotos = new HashMap<>();
     private final Set<Integer> loadingSeasons = new HashSet<>();
+    private final Set<String> brokenSources = new HashSet<>();
     private final List<String> detailTmdbPhotos = new ArrayList<>();
     private final List<String> tmdbEpisodePhotos = new ArrayList<>();
     private final List<String> backdropSlideItems = new ArrayList<>();
@@ -379,6 +380,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        brokenSources.clear();
         resetDetailState();
         loadContent(null);
     }
@@ -1316,11 +1318,11 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.loading.setVisibility(View.GONE);
         if (loadedVod == null) {
             if (!TextUtils.isEmpty(error)) Notify.show(error);
-            VideoActivity.startDirect(this, getKeyText(), getIdText(), getNameText(), getPicText(), getMarkText());
-            finish();
+            tryAutoChangeSource();
             return;
         }
         vod = loadedVod;
+        brokenSources.clear();
         sourceVodName = loadedVod.getName();
         TmdbEpisodeSorter.sort(vod);
         applyTmdbBundle(bundle);
@@ -4967,6 +4969,26 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         });
     }
 
+    private void tryAutoChangeSource() {
+        brokenSources.add(getKeyText());
+        String keyword = getSourceSearchKeyword();
+        int generation = loadGeneration;
+        int searchGeneration = ++sourceSearchGeneration;
+        Notify.show(getString(R.string.detail_source_searching));
+        Task.execute(() -> {
+            SourceMatch match = searchChangeSource(keyword);
+            runOnAliveUi(() -> {
+                if (generation != loadGeneration || searchGeneration != sourceSearchGeneration) return;
+                if (match == null) {
+                    Notify.show(R.string.detail_source_empty);
+                    return;
+                }
+                Notify.show(getString(R.string.play_switch_site, match.vod().getSiteName()));
+                switchSourceDetail(match.site(), match.vod(), matchedTmdbItem);
+            });
+        });
+    }
+
     private boolean openGlobalSourceSearch() {
         String keyword = getSourceSearchKeyword();
         if (TextUtils.isEmpty(keyword)) return false;
@@ -5117,6 +5139,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private boolean isChangeSourceCandidate(Site site) {
         if (site == null || site.isEmpty() || !site.isSearchable()) return false;
         if (!site.isChangeable()) return false;
+        if (brokenSources.contains(site.getKey())) return false;
         return !site.getKey().equals(getKeyText());
     }
 
