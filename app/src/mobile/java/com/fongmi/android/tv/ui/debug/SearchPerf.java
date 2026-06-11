@@ -23,6 +23,7 @@ public final class SearchPerf {
     private static int listImages;
     private static int holds;
     private static int loadImages;
+    private static int preloads;
 
     private SearchPerf() {
     }
@@ -76,6 +77,13 @@ public final class SearchPerf {
         flushSummary(false, -1, -1, itemCount);
     }
 
+    public static void preload(int count, int start, int end, int width, int height, int itemCount) {
+        if (!enabled() || count <= 0) return;
+        preloads += count;
+        log("preload count=%d range=%d-%d size=%dx%d items=%d", count, start, end, width, height, itemCount);
+        flushSummary(false, -1, -1, itemCount);
+    }
+
     public static void flushSummary() {
         flushSummary(true, -1, -1, -1);
     }
@@ -83,11 +91,11 @@ public final class SearchPerf {
     private static void flushSummary(boolean force, int viewType, int columnCount, int itemCount) {
         long now = SystemClock.uptimeMillis();
         if (!force && now - lastSummary < SUMMARY_INTERVAL) return;
-        if (creates == 0 && binds == 0 && payloadBinds == 0 && recycles == 0 && recycleFails == 0 && gridImages == 0 && listImages == 0 && holds == 0 && loadImages == 0) {
+        if (creates == 0 && binds == 0 && payloadBinds == 0 && recycles == 0 && recycleFails == 0 && gridImages == 0 && listImages == 0 && holds == 0 && loadImages == 0 && preloads == 0) {
             lastSummary = now;
             return;
         }
-        Log.d(TAG, String.format(Locale.US, "adapter summary create=%d bind=%d payload=%d recycle=%d recycleFail=%d gridImg=%d listImg=%d load=%d hold=%d viewType=%d columns=%d items=%d", creates, binds, payloadBinds, recycles, recycleFails, gridImages, listImages, loadImages, holds, viewType, columnCount, itemCount));
+        Log.d(TAG, String.format(Locale.US, "adapter summary create=%d bind=%d payload=%d recycle=%d recycleFail=%d gridImg=%d listImg=%d load=%d hold=%d preload=%d viewType=%d columns=%d items=%d", creates, binds, payloadBinds, recycles, recycleFails, gridImages, listImages, loadImages, holds, preloads, viewType, columnCount, itemCount));
         creates = 0;
         binds = 0;
         payloadBinds = 0;
@@ -97,6 +105,7 @@ public final class SearchPerf {
         listImages = 0;
         holds = 0;
         loadImages = 0;
+        preloads = 0;
         lastSummary = now;
     }
 

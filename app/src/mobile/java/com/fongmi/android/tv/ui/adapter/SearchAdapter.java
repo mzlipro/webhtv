@@ -32,12 +32,18 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     private static final int META_PART_MAX = 24;
     private static final int SITE_MAX = 24;
     private static final int YEAR_MAX = 8;
+    private static final int LIST_IMAGE_WIDTH_DP = 90;
+    private static final int LIST_IMAGE_HEIGHT_DP = 120;
     public static final int GRID_MIN_WIDTH_DP = 72;
 
     private final OnClickListener listener;
     private final List<Vod> items;
     private int columnCount = 2;
     private int gridWidth;
+    private int preloadedStart = RecyclerView.NO_POSITION;
+    private int preloadedEnd = RecyclerView.NO_POSITION;
+    private int preloadedWidth;
+    private int preloadedHeight;
     private boolean loadImages = true;
 
     public SearchAdapter(OnClickListener listener) {
@@ -71,6 +77,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         int count = items == null ? 0 : items.size();
         this.items.clear();
         if (items != null) this.items.addAll(items);
+        resetPreloadRange();
         notifyDataSetChanged();
         SearchPerf.slow("adapter.setItems", start, 16, "count=%d grid=%s columns=%d", count, isGrid(), columnCount);
         SearchPerf.log("adapter setItems count=%d grid=%s columns=%d", count, isGrid(), columnCount);
@@ -109,6 +116,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         long start = SearchPerf.now();
         int count = items.size();
         items.clear();
+        resetPreloadRange();
         if (count > 0) notifyItemRangeRemoved(0, count);
         SearchPerf.slow("adapter.clear", start, 16, "count=%d", count);
         SearchPerf.log("adapter clear count=%d", count);
@@ -125,6 +133,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         if (this.columnCount == count) return;
         long start = SearchPerf.now();
         this.columnCount = count;
+        resetPreloadRange();
         notifyDataSetChanged();
         SearchPerf.slow("adapter.setColumnCount", start, 16, "columns=%d total=%d", count, items.size());
         SearchPerf.log("adapter setColumnCount columns=%d total=%d", count, items.size());
@@ -135,6 +144,7 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         if (this.gridWidth == width) return;
         long start = SearchPerf.now();
         this.gridWidth = width;
+        resetPreloadRange();
         if (isGrid()) notifyDataSetChanged();
         SearchPerf.slow("adapter.setGridWidth", start, 16, "width=%d grid=%s total=%d", width, isGrid(), items.size());
         SearchPerf.log("adapter setGridWidth width=%d grid=%s total=%d", width, isGrid(), items.size());
@@ -154,6 +164,30 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
 
     public boolean isLoadImages() {
         return loadImages;
+    }
+
+    public void preloadImages(int first, int last, int extraBefore, int extraAfter) {
+        if (items.isEmpty() || first == RecyclerView.NO_POSITION || last < first) return;
+        int[] size = getImageSize();
+        int width = size[0];
+        int height = size[1];
+        if (width <= 0 || height <= 0) return;
+        if (preloadedWidth != width || preloadedHeight != height) resetPreloadRange();
+        int start = Math.max(0, first - Math.max(0, extraBefore));
+        int end = Math.min(items.size() - 1, last + Math.max(0, extraAfter));
+        boolean disjoint = preloadedStart == RecyclerView.NO_POSITION || start > preloadedEnd + 1 || end < preloadedStart - 1;
+        int count = 0;
+        for (int i = start; i <= end; i++) {
+            if (isPreloaded(i, width, height)) continue;
+            ImgUtil.preloadThumb(getItem(i).getPic(), width, height);
+            count++;
+        }
+        if (count == 0) return;
+        preloadedWidth = width;
+        preloadedHeight = height;
+        preloadedStart = disjoint ? start : Math.min(preloadedStart, start);
+        preloadedEnd = disjoint ? end : Math.max(preloadedEnd, end);
+        SearchPerf.preload(count, start, end, width, height, items.size());
     }
 
     public void loadImage(@NonNull RecyclerView.ViewHolder holder) {
@@ -178,15 +212,14 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     }
 
     private void loadGridImage(Vod item, ImageView image, String name) {
+        int[] size = getGridImageSize(image);
+        int width = size[0];
+        int height = size[1];
         if (!loadImages) {
-            SearchPerf.image(true, false, image.getWidth(), image.getHeight(), items.size());
-            ImgUtil.hold(item.getPic(), image, true, false);
+            SearchPerf.image(true, false, width, height, items.size());
+            ImgUtil.cacheThumb(name, item.getPic(), image, width, height);
             return;
         }
-        int width = image.getWidth();
-        int height = image.getHeight();
-        if (width <= 0 && image.getParent() instanceof View parent) width = parent.getWidth();
-        if (height <= 0) height = image.getLayoutParams().height;
         SearchPerf.image(true, true, width, height, items.size());
         ImgUtil.loadThumb(name, item.getPic(), image, width, height);
     }
@@ -196,13 +229,69 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
     }
 
     private void loadListImage(Vod item, ImageView image, String name) {
+        int[] size = getListImageSize(image);
+        int width = size[0];
+        int height = size[1];
         if (!loadImages) {
-            SearchPerf.image(false, false, image.getWidth(), image.getHeight(), items.size());
-            ImgUtil.hold(item.getPic(), image, true, false);
+            SearchPerf.image(false, false, width, height, items.size());
+            ImgUtil.cacheThumb(name, item.getPic(), image, width, height);
             return;
         }
-        SearchPerf.image(false, true, image.getWidth(), image.getHeight(), items.size());
-        ImgUtil.load(name, item.getPic(), image);
+        SearchPerf.image(false, true, width, height, items.size());
+        ImgUtil.loadThumb(name, item.getPic(), image, width, height);
+    }
+
+    private int[] getGridImageSize(ImageView image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        if (width <= 0 && image.getParent() instanceof View parent) width = parent.getWidth();
+        if (width <= 0) width = getGridImageWidth();
+        if (height <= 0) height = image.getLayoutParams().height;
+        if (height <= 0 && width > 0) height = getGridImageHeight(width);
+        return new int[]{width, height};
+    }
+
+    private int[] getListImageSize(ImageView image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        if (width <= 0) width = image.getLayoutParams().width;
+        if (height <= 0) height = image.getLayoutParams().height;
+        if (width <= 0) width = ResUtil.dp2px(LIST_IMAGE_WIDTH_DP);
+        if (height <= 0) height = ResUtil.dp2px(LIST_IMAGE_HEIGHT_DP);
+        return new int[]{width, height};
+    }
+
+    private int[] getImageSize() {
+        if (!isGrid()) return new int[]{ResUtil.dp2px(LIST_IMAGE_WIDTH_DP), ResUtil.dp2px(LIST_IMAGE_HEIGHT_DP)};
+        int width = getGridImageWidth();
+        return new int[]{width, getGridImageHeight(width)};
+    }
+
+    private int getGridImageWidth() {
+        return getGridImageWidth(gridWidth > 0 ? gridWidth : ResUtil.getScreenWidth());
+    }
+
+    private int getGridImageWidth(int available) {
+        int count = Math.max(1, columnCount);
+        int margin = ResUtil.dp2px(16);
+        if (available <= 0) available = ResUtil.getScreenWidth();
+        int width = (available - margin * count) / count;
+        return Math.max(1, width > 0 ? width : available / count);
+    }
+
+    private int getGridImageHeight(int width) {
+        return Math.max(1, (int) (width / 0.75f));
+    }
+
+    private boolean isPreloaded(int position, int width, int height) {
+        return preloadedStart != RecyclerView.NO_POSITION && preloadedWidth == width && preloadedHeight == height && position >= preloadedStart && position <= preloadedEnd;
+    }
+
+    private void resetPreloadRange() {
+        preloadedStart = RecyclerView.NO_POSITION;
+        preloadedEnd = RecyclerView.NO_POSITION;
+        preloadedWidth = 0;
+        preloadedHeight = 0;
     }
 
     private static String displayName(Vod item, int maxLength) {
@@ -369,14 +458,10 @@ public class SearchAdapter extends BaseDiffAdapter<Vod, RecyclerView.ViewHolder>
         }
 
         private GridViewHolder size(ViewGroup parent, int columnCount) {
-            int count = Math.max(1, columnCount);
-            int margin = ResUtil.dp2px(16);
-            int available = gridWidth;
-            if (available <= 0) available = parent.getWidth() - parent.getPaddingStart() - parent.getPaddingEnd();
+            int available = gridWidth > 0 ? gridWidth : parent.getWidth() - parent.getPaddingStart() - parent.getPaddingEnd();
             if (available <= 0) return this;
-            int width = (available - margin * count) / count;
-            if (width <= 0) width = Math.max(1, available / count);
-            int height = (int) (width / 0.75f);
+            int width = getGridImageWidth(available);
+            int height = getGridImageHeight(width);
             if (binding.getRoot().getLayoutParams().width != width) binding.getRoot().getLayoutParams().width = width;
             if (binding.image.getLayoutParams().height != height) binding.image.getLayoutParams().height = height;
             return this;

@@ -50,7 +50,17 @@ public class ImgUtil {
     private static final RequestOptions THUMB_OPTIONS = new RequestOptions()
             .format(DecodeFormat.PREFER_RGB_565)
             .downsample(DownsampleStrategy.AT_MOST)
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .dontAnimate();
+    private static final RequestOptions CACHE_OPTIONS = new RequestOptions()
             .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+            .onlyRetrieveFromCache(true)
+            .dontAnimate();
+    private static final RequestOptions THUMB_CACHE_OPTIONS = new RequestOptions()
+            .format(DecodeFormat.PREFER_RGB_565)
+            .downsample(DownsampleStrategy.AT_MOST)
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .onlyRetrieveFromCache(true)
             .dontAnimate();
 
     public static void logo(ImageView view) {
@@ -93,6 +103,18 @@ public class ImgUtil {
         load(text, url, view, true, clampThumbWidth(width), clampThumbHeight(height), true);
     }
 
+    public static void cacheThumb(String text, String url, ImageView view, int width, int height) {
+        cache(text, url, view, true, clampThumbWidth(width), clampThumbHeight(height), true);
+    }
+
+    public static void preloadThumb(String url, int width, int height) {
+        preload(url, clampThumbWidth(width), clampThumbHeight(height), true);
+    }
+
+    public static void preload(String url, int width, int height) {
+        preload(url, width, height, false);
+    }
+
     public static void hold(String url, ImageView view, boolean vod) {
         hold(url, view, vod, true);
     }
@@ -127,6 +149,21 @@ public class ImgUtil {
         else view.post(() -> load(text, url, view, vod, model, width > 0 ? width : view.getWidth(), height > 0 ? height : view.getHeight(), thumb));
     }
 
+    private static void cache(String text, String url, ImageView view, boolean vod, int width, int height, boolean thumb) {
+        view.setScaleType(vod ? CENTER_CROP : FIT_CENTER);
+        if (!vod) view.setVisibility(TextUtils.isEmpty(url) ? View.GONE : View.VISIBLE);
+        Object oldTag = view.getTag(R.id.image);
+        view.setTag(R.id.image, url);
+        Object model = getUrl(url);
+        if (model == null || failed.contains(url)) {
+            view.setImageDrawable(getTextDrawable(text, vod));
+            return;
+        }
+        if (!TextUtils.equals(url, oldTag instanceof String ? (String) oldTag : null)) view.setImageDrawable(null);
+        if (width > 0 && height > 0) cache(url, view, vod, model, width, height, thumb);
+        else view.post(() -> cache(url, view, vod, model, width > 0 ? width : view.getWidth(), height > 0 ? height : view.getHeight(), thumb));
+    }
+
     private static void load(String text, String url, ImageView view, boolean vod, Object model, int width, int height, boolean thumb) {
         if (!url.equals(view.getTag(R.id.image))) return;
         try {
@@ -138,6 +175,33 @@ public class ImgUtil {
             if (width > 0 && height > 0) builder.override(width, height);
             if (vod) builder.centerCrop().into(view);
             else builder.fitCenter().into(view);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void cache(String url, ImageView view, boolean vod, Object model, int width, int height, boolean thumb) {
+        if (!url.equals(view.getTag(R.id.image))) return;
+        try {
+            if (thumb) {
+                width = clampThumbWidth(width);
+                height = clampThumbHeight(height);
+            }
+            RequestBuilder<Drawable> builder = Glide.with(view).load(model).apply(thumb ? THUMB_CACHE_OPTIONS : CACHE_OPTIONS).listener(getCacheListener(url, view));
+            if (width > 0 && height > 0) builder.override(width, height);
+            if (vod) builder.centerCrop().into(view);
+            else builder.fitCenter().into(view);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void preload(String url, int width, int height, boolean thumb) {
+        try {
+            if (width <= 0 || height <= 0) return;
+            Object model = getUrl(url);
+            if (model == null || failed.contains(url)) return;
+            Glide.with(App.get()).load(model).apply(thumb ? THUMB_OPTIONS : BASE_OPTIONS).override(width, height).preload(width, height);
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -216,6 +280,20 @@ public class ImgUtil {
                 if (!isCurrent(url, view)) return true;
                 view.setImageDrawable(getTextDrawable(text, vod));
                 failed.add(url);
+                return true;
+            }
+
+            @Override
+            public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target, DataSource dataSource, boolean isFirstResource) {
+                return !isCurrent(url, view);
+            }
+        };
+    }
+
+    private static RequestListener<Drawable> getCacheListener(String url, ImageView view) {
+        return new RequestListener<>() {
+            @Override
+            public boolean onLoadFailed(@Nullable GlideException e, Object model, @NonNull Target<Drawable> target, boolean isFirstResource) {
                 return true;
             }
 

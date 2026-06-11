@@ -63,14 +63,19 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private static final long SEARCH_UPDATE_DELAY = 120;
     private static final long SEARCH_SCROLL_DELAY = 220;
     private static final long SEARCH_FIRST_IMAGE_DELAY = 0;
-    private static final long SEARCH_AFTER_SCROLL_DELAY = 500;
-    private static final long SEARCH_IMAGE_DELAY = 120;
-    private static final int SEARCH_IMAGE_BATCH_SIZE = 1;
-    private static final int SEARCH_ITEM_CACHE_SIZE = 8;
+    private static final long SEARCH_AFTER_SCROLL_DELAY = 80;
+    private static final long SEARCH_IMAGE_DELAY = 32;
+    private static final int SEARCH_IMAGE_BATCH_LIST = 6;
+    private static final int SEARCH_IMAGE_BATCH_GRID = 8;
+    private static final int SEARCH_PRELOAD_BEFORE_LIST = 4;
+    private static final int SEARCH_PRELOAD_AFTER_LIST = 8;
+    private static final int SEARCH_PRELOAD_BEFORE_GRID = 8;
+    private static final int SEARCH_PRELOAD_AFTER_GRID = 24;
+    private static final int SEARCH_ITEM_CACHE_SIZE = 16;
     private static final int SEARCH_RECYCLED_LIST_SIZE = 48;
     private static final int SEARCH_RECYCLED_GRID_SIZE = 32;
-    private static final int SEARCH_RENDER_INITIAL_LIST = 60;
-    private static final int SEARCH_RENDER_INITIAL_GRID = 96;
+    private static final int SEARCH_RENDER_INITIAL_LIST = 32;
+    private static final int SEARCH_RENDER_INITIAL_GRID = 64;
     private static final int SEARCH_RENDER_MORE_LIST = 16;
     private static final int SEARCH_RENDER_MORE_GRID = 24;
     private static final int SEARCH_RENDER_THRESHOLD_LIST = 8;
@@ -236,9 +241,11 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
                     searchFlushScheduled = false;
                     imageRestoreScheduled = false;
                     resetLoadedSearchImages();
+                    preloadVisibleSearchImages();
                 } else {
                     App.removeCallbacks(flushSearchUpdates);
                     searchFlushScheduled = false;
+                    preloadVisibleSearchImages();
                     scheduleVisibleSearchImages(SEARCH_AFTER_SCROLL_DELAY);
                     scheduleSearchFlush(SEARCH_AFTER_SCROLL_DELAY);
                 }
@@ -246,12 +253,13 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                if (dy != 0) scheduleSearchWindowRender();
+                if (dy != 0) {
+                    scheduleSearchWindowRender();
+                    preloadVisibleSearchImages();
+                }
             }
         });
         mBinding.recycler.setAdapter(mSearchAdapter = new SearchAdapter(this));
-        RecyclerView.LayoutManager manager = mBinding.recycler.getLayoutManager();
-        if (manager instanceof GridLayoutManager layoutManager) layoutManager.setItemPrefetchEnabled(false);
     }
 
     private static class SearchGridLayoutManager extends GridLayoutManager {
@@ -274,6 +282,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         int first = layoutManager.findFirstVisibleItemPosition();
         int last = layoutManager.findLastVisibleItemPosition();
         if (first == RecyclerView.NO_POSITION || last < first) return;
+        preloadSearchImages(first, last);
         if (isSearchImageRangeLoaded(first, last)) return;
         if (imageRestoreScheduled) {
             if (pendingImageStart == RecyclerView.NO_POSITION || pendingImageEnd < pendingImageStart) pendingImageStart = getFirstUnloadedSearchImage(first, last);
@@ -293,7 +302,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         imageRestoreScheduled = false;
         if (mBinding == null || mSearchAdapter == null || searchScrolling) return;
         if (pendingImageStart == RecyclerView.NO_POSITION || pendingImageEnd < pendingImageStart) return;
-        int count = Math.min(SEARCH_IMAGE_BATCH_SIZE, pendingImageEnd - pendingImageStart + 1);
+        int count = Math.min(getSearchImageBatchSize(), pendingImageEnd - pendingImageStart + 1);
         int restored = 0;
         for (int i = 0; i < count; i++) {
             int position = pendingImageStart + i;
@@ -312,8 +321,15 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         } else {
             pendingImageStart = RecyclerView.NO_POSITION;
             pendingImageEnd = RecyclerView.NO_POSITION;
-            if (!mSearchAdapter.isGridMode()) mSearchAdapter.setLoadImages(true);
         }
+    }
+
+    private void scheduleVisibleSearchImagesAfterLayout(long delayMillis) {
+        if (mBinding == null) return;
+        mBinding.recycler.post(() -> {
+            scheduleVisibleSearchImages(delayMillis);
+            if (mBinding != null) mBinding.recycler.postDelayed(() -> scheduleVisibleSearchImages(delayMillis), SEARCH_AFTER_SCROLL_DELAY);
+        });
     }
 
     private void resetSearchImageLoading() {
@@ -322,6 +338,33 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         pendingImageEnd = RecyclerView.NO_POSITION;
         imageRestoreScheduled = false;
         resetLoadedSearchImages();
+    }
+
+    private void preloadVisibleSearchImages() {
+        if (mBinding == null || mSearchAdapter == null) return;
+        RecyclerView.LayoutManager manager = mBinding.recycler.getLayoutManager();
+        if (!(manager instanceof LinearLayoutManager layoutManager)) return;
+        int first = layoutManager.findFirstVisibleItemPosition();
+        int last = layoutManager.findLastVisibleItemPosition();
+        if (first == RecyclerView.NO_POSITION || last < first) return;
+        preloadSearchImages(first, last);
+    }
+
+    private void preloadSearchImages(int first, int last) {
+        if (mSearchAdapter == null) return;
+        mSearchAdapter.preloadImages(first, last, getSearchPreloadBefore(), getSearchPreloadAfter());
+    }
+
+    private int getSearchImageBatchSize() {
+        return mSearchAdapter != null && mSearchAdapter.isGridMode() ? SEARCH_IMAGE_BATCH_GRID : SEARCH_IMAGE_BATCH_LIST;
+    }
+
+    private int getSearchPreloadBefore() {
+        return mSearchAdapter != null && mSearchAdapter.isGridMode() ? SEARCH_PRELOAD_BEFORE_GRID : SEARCH_PRELOAD_BEFORE_LIST;
+    }
+
+    private int getSearchPreloadAfter() {
+        return mSearchAdapter != null && mSearchAdapter.isGridMode() ? SEARCH_PRELOAD_AFTER_GRID : SEARCH_PRELOAD_AFTER_LIST;
     }
 
     private void scheduleSearchWindowRender() {
@@ -341,7 +384,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         if (items.isEmpty()) return;
         SearchPerf.log("addSearchItems count=%d totalBefore=%d grid=%s scrolling=%s", items.size(), mSearchAdapter.getItemCount(), mSearchAdapter.isGridMode(), searchScrolling);
         mSearchAdapter.setLoadImages(false);
-        mSearchAdapter.addAll(items, () -> scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY));
+        mSearchAdapter.addAll(items, () -> scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY));
     }
 
     private void setSearchItems(List<Vod> items, Runnable runnable) {
@@ -361,7 +404,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         SearchPerf.log("setSearchItems source=%d visible=%d totalBefore=%d grid=%s", source.size(), visible.size(), mSearchAdapter.getItemCount(), mSearchAdapter.isGridMode());
         mSearchAdapter.setItems(visible, () -> {
             if (runnable != null) runnable.run();
-            scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY);
+            scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY);
             SearchPerf.slow("setSearchItems", start, 16, "source=%d visible=%d start=%d end=%d", source.size(), visible.size(), renderedSearchStart, renderedSearchEnd);
         });
     }
@@ -405,7 +448,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mSearchAdapter.setItems(visible, () -> {
             if (mBinding == null) return;
             scrollSearchWindowToOffset(first == RecyclerView.NO_POSITION ? add : first + add, firstTop);
-            scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY);
+            scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY);
             mBinding.recycler.post(this::trimSearchWindowFromBottomIfNeeded);
         });
         return true;
@@ -428,7 +471,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mSearchAdapter.setItems(visible, () -> {
             if (mBinding == null) return;
             scrollSearchWindowToOffset(Math.max(0, first - remove), firstTop);
-            scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY);
+            scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY);
         });
     }
 
@@ -447,7 +490,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         resetSearchImageLoading();
         mSearchAdapter.setLoadImages(false);
         SearchPerf.log("render trimBottom remove=%d start=%d end=%d visible=%d last=%d", remove, renderedSearchStart, renderedSearchEnd, visible.size(), last);
-        mSearchAdapter.setItems(visible, () -> scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY));
+        mSearchAdapter.setItems(visible, () -> scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY));
     }
 
     private boolean shouldAppendSearchWindow() {
@@ -625,7 +668,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         int safeCount = getSafeSearchColumn(desiredSearchColumn);
         applySearchColumn(safeCount);
         postUpdateGridWidth();
-        if (safeCount > 1) mBinding.recycler.post(() -> scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY));
+        if (safeCount > 1) scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY);
     }
 
     private void setSearchView(boolean grid) {
@@ -650,7 +693,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         SearchPerf.log("gridWidth width=%d desired=%d safe=%d applied=%d total=%d", width, desiredSearchColumn, safeCount, appliedSearchColumn, mSearchAdapter.getItemCount());
         applySearchColumn(safeCount);
         mSearchAdapter.setGridWidth(width);
-        if (safeCount > 1) scheduleVisibleSearchImages(SEARCH_FIRST_IMAGE_DELAY);
+        if (safeCount > 1) scheduleVisibleSearchImagesAfterLayout(SEARCH_FIRST_IMAGE_DELAY);
         SearchPerf.slow("updateGridWidth", start, 16, "width=%d desired=%d safe=%d total=%d", width, desiredSearchColumn, safeCount, mSearchAdapter.getItemCount());
     }
 
@@ -670,7 +713,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private void applySearchColumn(int count) {
         int safeCount = Math.max(1, count);
-        mSearchAdapter.setLoadImages(safeCount <= 1);
+        mSearchAdapter.setLoadImages(false);
         if (appliedSearchColumn == safeCount) return;
         long start = SearchPerf.now();
         appliedSearchColumn = safeCount;
