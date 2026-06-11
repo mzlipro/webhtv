@@ -9,9 +9,13 @@ import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.databinding.DialogDisplayBinding;
 import com.fongmi.android.tv.setting.PlayerSetting;
+import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 public class DisplayDialog extends BaseAlertDialog {
+
+    private static final float DIALOG_WIDTH_LANDSCAPE = 0.42f;
+    private static final float DIALOG_WIDTH_PORTRAIT = 0.92f;
 
     private DialogDisplayBinding binding;
     private Runnable callback;
@@ -86,6 +90,7 @@ public class DisplayDialog extends BaseAlertDialog {
     public void onStart() {
         super.onStart();
         if (getDialog() != null && getDialog().getWindow() != null) getDialog().getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        setWidth(ResUtil.isLand(requireContext()) ? DIALOG_WIDTH_LANDSCAPE : DIALOG_WIDTH_PORTRAIT);
     }
 
     private enum Display {

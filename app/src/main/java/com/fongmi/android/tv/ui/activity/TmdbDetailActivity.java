@@ -216,6 +216,8 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private Result currentInlineResult;
     private ViewGroup playerParent;
     private ViewGroup.LayoutParams playerLayoutParams;
+    private ViewGroup inlinePiPParent;
+    private ViewGroup.LayoutParams inlinePiPLayoutParams;
     private View detailControlRoot;
     private View detailActionRoot;
     private View inlineControlFocus;
@@ -225,11 +227,15 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private boolean inlineKeySpeedChanging;
     private float inlineGestureSpeed = 1.0f;
     private boolean inlineStartPositionApplied;
-    private boolean inlinePiPEnteredFullscreen;
+    private boolean inlinePiPLayout;
+    private boolean inlinePiPLayoutRequested;
+    private boolean inlinePiPSourceFrozen;
     private long inlineStartPosition = C.TIME_UNSET;
     private int selectedSeasonNumber = -1;
     private int playerIndex = -1;
+    private int inlinePiPIndex = -1;
     private int requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    private float inlinePiPTranslationZ;
     private int headerBarBasePaddingTop = -1;
     private int statusBarInsetTop;
     private int detailThemeMode;
@@ -554,7 +560,9 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         binding.playerPanel.setOnTouchListener(this::onInlineTouch);
         binding.playerPanel.setOnKeyListener(this::onInlinePanelKey);
         binding.playerPanel.setOnFocusChangeListener((view, focused) -> updatePlayerPanelFocus());
-        binding.playerPanel.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> inlinePiP.update(this, view));
+        binding.playerPanel.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (!inlinePiPSourceFrozen) inlinePiP.update(this, view);
+        });
         setupInlineControlFocus();
         setupInlineFocusNavigation();
         binding.playerPrev.setOnClickListener(view -> checkInlinePrev());
@@ -1147,7 +1155,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private void setPlayerCard(ThemeColors colors) {
         if (!isInlinePlayerMode()) return;
         binding.playerPanel.setCardBackgroundColor(0xFF000000);
-        binding.playerPanel.setRadius(inlineFullscreen ? 0 : ResUtil.dp2px(20));
+        binding.playerPanel.setRadius(inlineFullscreen || inlinePiPLayout ? 0 : ResUtil.dp2px(20));
         updatePlayerPanelFocus(colors);
     }
 
@@ -1157,7 +1165,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void updatePlayerPanelFocus(ThemeColors colors) {
         if (!isInlinePlayerMode()) return;
-        if (inlineFullscreen) {
+        if (inlineFullscreen || inlinePiPLayout) {
             binding.playerPanel.setStrokeColor(0x00000000);
             binding.playerPanel.setStrokeWidth(0);
             return;
@@ -3404,7 +3412,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     private void updateInlineDisplayPanel() {
         if (binding == null) return;
-        if (isInlineDisplaySuppressed()) {
+        if (isInPictureInPictureMode() || isInlineDisplaySuppressed()) {
             hideInlineDisplayPanel();
             return;
         }
@@ -4202,13 +4210,12 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     private void enterInlinePiP(boolean force) {
         if (!canEnterInlinePiP()) return;
         if (!force && !PlayerSetting.isBackgroundPiP()) return;
-        boolean restoreFullscreen = !inlineFullscreen;
-        if (restoreFullscreen) enterInlineFullscreen();
         hideInlineControls();
         hideInlineGestureOverlays();
+        if (inlinePiP != null) inlinePiP.update(this, binding.playerPanel);
+        inlinePiPLayoutRequested = !inlineFullscreen;
         boolean entered = inlinePiP != null && inlinePiP.enter(this, player().getVideoWidth(), player().getVideoHeight(), getInlineScale(), force);
-        inlinePiPEnteredFullscreen = entered && restoreFullscreen;
-        if (!entered && restoreFullscreen && !isInPictureInPictureMode()) exitInlineFullscreen();
+        if (!entered) inlinePiPLayoutRequested = false;
     }
 
     private boolean canEnterInlinePiP() {
@@ -4236,7 +4243,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
     }
 
     private void enterInlineFullscreen() {
-        if (inlineFullscreen) return;
+        if (inlineFullscreen || inlinePiPLayout || isInPictureInPictureMode()) return;
         inlineFullscreen = true;
         requestedOrientation = getRequestedOrientation();
         playerParent = (ViewGroup) binding.playerPanel.getParent();
@@ -4265,6 +4272,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
             resetInlineShortDramaMode();
             return;
         }
+        if (inlinePiPLayout || isInPictureInPictureMode()) return;
         if (!inlineFullscreen) enterInlineFullscreen();
         if (!shouldUseInlineShortDramaMode()) {
             resetInlineShortDramaMode();
@@ -4373,6 +4381,47 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         playerLayoutParams = null;
         playerIndex = -1;
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    }
+
+    private void enterInlinePiPLayout() {
+        if (inlinePiPLayout || inlineFullscreen || binding == null) return;
+        inlinePiPParent = (ViewGroup) binding.playerPanel.getParent();
+        inlinePiPLayoutParams = binding.playerPanel.getLayoutParams();
+        inlinePiPIndex = inlinePiPParent.indexOfChild(binding.playerPanel);
+        inlinePiPTranslationZ = binding.playerPanel.getTranslationZ();
+        inlinePiPLayout = true;
+        // Keep the original source rect so PiP exits back to the inline card.
+        inlinePiPSourceFrozen = true;
+        inlinePiPParent.removeView(binding.playerPanel);
+        binding.root.addView(binding.playerPanel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        binding.playerPanel.setTranslationZ(32f);
+        binding.playerPanel.setVisibility(View.VISIBLE);
+        binding.playerPanel.setRadius(0);
+        updatePlayerPanelFocus();
+        hideInlineDisplayPanel();
+    }
+
+    private void exitInlinePiPLayout() {
+        if (!inlinePiPLayout || binding == null) return;
+        ((ViewGroup) binding.playerPanel.getParent()).removeView(binding.playerPanel);
+        if (inlinePiPParent != null && inlinePiPLayoutParams != null) {
+            int index = inlinePiPIndex < 0 || inlinePiPIndex > inlinePiPParent.getChildCount() ? inlinePiPParent.getChildCount() : inlinePiPIndex;
+            inlinePiPParent.addView(binding.playerPanel, index, inlinePiPLayoutParams);
+        }
+        binding.playerPanel.setTranslationZ(inlinePiPTranslationZ);
+        inlinePiPLayout = false;
+        setPlayerCard(lightTheme ? ThemeColors.light() : ThemeColors.dark());
+        updateInlineDisplayPanel();
+        focusInlinePlayerPanel();
+        inlinePiPParent = null;
+        inlinePiPLayoutParams = null;
+        inlinePiPIndex = -1;
+        inlinePiPTranslationZ = 0f;
+        binding.playerPanel.post(() -> {
+            if (binding == null) return;
+            inlinePiPSourceFrozen = false;
+            if (inlinePiP != null) inlinePiP.update(TmdbDetailActivity.this, binding.playerPanel);
+        });
     }
 
     private void scheduleMobileInlineSideControlMarginUpdate() {
@@ -4697,10 +4746,11 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
         if (isInPictureInPictureMode) {
             hideInlineControls();
             hideInlineGestureOverlays();
+            if (inlinePiPLayoutRequested) enterInlinePiPLayout();
             return;
         }
-        if (inlinePiPEnteredFullscreen && inlineFullscreen) exitInlineFullscreen();
-        inlinePiPEnteredFullscreen = false;
+        exitInlinePiPLayout();
+        inlinePiPLayoutRequested = false;
         updateInlineButtons(service() != null && player() != null && !player().isEmpty() && player().isPlaying());
         updateInlineDisplayPanel();
     }
@@ -4746,6 +4796,7 @@ public class TmdbDetailActivity extends PlaybackActivity implements TrackDialog.
 
     @Override
     protected void onDestroy() {
+        if (inlinePiPLayout) exitInlinePiPLayout();
         if (inlineFullscreen) exitInlineFullscreen();
         cancelBackdropSlideRequest();
         App.removeCallbacks(inlineHideControls);
