@@ -1878,8 +1878,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (isFullscreen() && KeyUtil.isMenuKey(event)) {
-            if (Setting.getFullscreenMenuKey() == 0) onToggle();
-            else onEpisodes();
+            if (Setting.getFullscreenMenuKey() == 1) onEpisodes();
+            else onToggle();
         }
         if (isVisible(mBinding.control.getRoot())) setR1Callback();
         if (isVisible(mBinding.control.getRoot())) mFocus2 = getCurrentFocus();

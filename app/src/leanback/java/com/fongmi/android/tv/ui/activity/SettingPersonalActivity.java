@@ -15,6 +15,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.DisplayDialog;
 import com.fongmi.android.tv.ui.dialog.HomeButtonDialog;
+import com.fongmi.android.tv.ui.dialog.HomeMenuKeyDialog;
 
 public class SettingPersonalActivity extends BaseActivity {
 
@@ -110,8 +111,7 @@ public class SettingPersonalActivity extends BaseActivity {
     }
 
     private void setHomeMenuKey(View view) {
-        Setting.putHomeMenuKey((Setting.getHomeMenuKey() + 1) % homeMenuKey.length);
-        setText();
+        HomeMenuKeyDialog.show(this, this::setText);
     }
 
     private void setPlayBackToDetail(View view) {
