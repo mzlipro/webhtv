@@ -46,7 +46,7 @@ public class ShortDramaSourceDialog {
         View manageBtn = view.findViewById(R.id.manage);
 
         ShortDramaConfig config = ShortDramaConfig.objectFrom(Setting.getShortDramaConfig());
-        rulesEdit.setText(toDisplayText(config.getEnabledSites()));
+        rulesEdit.setText(config.getDisplayRulesWithNames());
         manageBtn.setOnClickListener(v -> showSiteManage());
 
         dialog = new MaterialAlertDialogBuilder(activity)

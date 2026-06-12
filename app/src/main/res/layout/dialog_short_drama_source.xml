@@ -8,7 +8,7 @@
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/dialog_audio_site_rules">
+        android:hint="@string/dialog_short_drama_site_rules">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/rules"
@@ -25,7 +25,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="@string/dialog_audio_site_manage"
+        android:text="@string/dialog_short_drama_site_manage"
         android:textAllCaps="false"
         style="@style/Widget.Material3.Button.OutlinedButton" />
 

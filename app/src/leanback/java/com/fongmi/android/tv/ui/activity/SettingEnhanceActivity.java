@@ -75,7 +75,7 @@ public class SettingEnhanceActivity extends BaseActivity {
     private void setText() {
         mBinding.driveCheckText.setText(getSwitch(Setting.isDriveCheck()));
         mBinding.audioSourceText.setText(getSwitch(!AudioConfig.objectFrom(Setting.getAudioConfig()).getDisplayRules().isEmpty()));
-        mBinding.shortDramaSourceText.setText(getSwitch(!ShortDramaConfig.objectFrom(Setting.getShortDramaConfig()).getDisplayRules().isEmpty()));
+        mBinding.shortDramaSourceText.setText(getSwitch(ShortDramaConfig.objectFrom(Setting.getShortDramaConfig()).isConfigured()));
         mBinding.debugLogText.setText(getSwitch(Setting.isDebugLog()));
         mBinding.siteHealthSortText.setText(getSwitch(Setting.isSiteHealthSort()));
         WebHomeExtensionRegistry.Snapshot webHomeExtension = WebHomeExtensionRegistry.get().snapshot();
