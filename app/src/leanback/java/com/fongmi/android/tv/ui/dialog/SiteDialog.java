@@ -319,12 +319,17 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         selectedGroup = group.equals(selectedGroup) ? "" : group;
         updateGroupView();
         adapter.filter(selectedGroup, "");
-        // 先保存当前焦点
-        view.requestFocus();
-        setRecyclerView();
-        setMode();
-        setWidth();
+        // 临时阻止 RecyclerView 的子 View 获取焦点
+        int oldDescendantFocusability = binding.recycler.getDescendantFocusability();
+        binding.recycler.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        adapter.notifyDataSetChanged();
+        setRecyclerHeight();
         binding.recycler.scrollToPosition(0);
+        // 延迟恢复焦点行为和请求焦点
+        view.postDelayed(() -> {
+            binding.recycler.setDescendantFocusability(oldDescendantFocusability);
+            view.requestFocus();
+        }, 50);
         if (!TextUtils.isEmpty(selectedGroup)) centerGroup(view);
     }
 
