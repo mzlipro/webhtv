@@ -139,16 +139,17 @@
     </FrameLayout>
 
     <!-- 评分展示区域 -->
-    <androidx.appcompat.widget.LinearLayoutCompat
+    <com.google.android.flexbox.FlexboxLayout
         android:id="@+id/tmdbRatingsContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginTop="12dp"
         android:layout_marginEnd="16dp"
-        android:orientation="horizontal"
-        android:gravity="start"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:alignItems="flex_start"
+        app:flexDirection="row"
+        app:flexWrap="wrap" />
 
     <!-- 简介 -->
     <com.google.android.material.textview.MaterialTextView

@@ -78,6 +78,7 @@ public class TmdbUIAdapter {
      */
     public void load(TmdbItem item, Vod vod) {
         if (item == null) return;
+        resetLoadState();
         this.tmdbItem = item;
         loadDetail(vod);
     }
@@ -89,6 +90,7 @@ public class TmdbUIAdapter {
      * @param vod       待增强的 Vod；增强后通过事件推回 UI
      */
     public void autoMatch(String videoName, Vod vod) {
+        resetLoadState();
         if (!isReady()) {
             SpiderDebug.log("tmdb", "skip auto match: config not ready");
             notifyLoadComplete(vod);
@@ -102,6 +104,7 @@ public class TmdbUIAdapter {
             TmdbItem matched = tmdbMatcher.searchAndMatch(videoName);
             if (matched == null) {
                 SpiderDebug.log("tmdb", "auto match miss name=%s", videoName);
+                tmdbItem = null;
                 notifyLoadComplete(vod);
                 return;
             }
@@ -111,8 +114,18 @@ public class TmdbUIAdapter {
     }
 
     private void loadDetail(Vod vod) {
-        if (tmdbItem == null || !isReady()) return;
+        if (tmdbItem == null || !isReady()) {
+            notifyLoadComplete(vod);
+            return;
+        }
         Task.execute(() -> loadDetailSync(vod));
+    }
+
+    private void resetLoadState() {
+        tmdbItem = null;
+        tmdbDetail = null;
+        tmdbCast = null;
+        loaded = false;
     }
 
     private void loadDetailSync(Vod vod) {
@@ -340,4 +353,3 @@ public class TmdbUIAdapter {
         return items;
     }
 }
-

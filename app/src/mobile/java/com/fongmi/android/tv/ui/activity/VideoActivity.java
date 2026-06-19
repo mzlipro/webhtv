@@ -159,6 +159,9 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private com.fongmi.android.tv.ui.helper.TmdbUIAdapter mTmdbUIAdapter;
     private com.fongmi.android.tv.ui.custom.TmdbHeaderView mTmdbHeaderView;
     private boolean mTmdbContentLoaded = false;
+    private boolean mTmdbFallbackToNative = false;
+    private boolean mTmdbControlsMoved = false;
+    private final List<TmdbMovedView> mTmdbMovedViews = new ArrayList<>();
 
     public static void push(FragmentActivity activity, String text) {
         if (FileChooser.isValid(activity, Uri.parse(text))) file(activity, FileChooser.getPathFromUri(Uri.parse(text)));
@@ -291,6 +294,14 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         if (!Setting.isTmdbEnabled()) return false;
         Site site = getSite();
         return Setting.isTmdbSiteEnabled(site == null ? getKey() : site.getKey(), site == null ? "" : site.getName());
+    }
+
+    private boolean hasTmdbDetailAdapter() {
+        return isTmdbSourceEnabled() && mTmdbHeaderView != null && mTmdbUIAdapter != null && mTmdbUIAdapter.isReady();
+    }
+
+    private boolean shouldUseTmdbDetailLayout() {
+        return hasTmdbDetailAdapter() && !mTmdbFallbackToNative;
     }
 
     private com.fongmi.android.tv.bean.TmdbItem getTmdbItem() {
@@ -586,19 +597,29 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void setDetail(Vod item) {
         item.checkPic(getPic());
         item.checkName(getName());
-        android.util.Log.d("VideoActivity", "setDetail - 调用 showContent()");
-        mBinding.progressLayout.showContent();
+        boolean tmdbMode = hasTmdbDetailAdapter();
+        mTmdbFallbackToNative = false;
+        mTmdbContentLoaded = false;
+        if (tmdbMode) {
+            hideTmdbHeader();
+            mBinding.videoShadow.setVisibility(View.GONE);
+            mBinding.progressLayout.showProgress();
+        } else {
+            restoreFlagAndEpisodeFromTmdb();
+            mBinding.videoShadow.setVisibility(View.VISIBLE);
+            android.util.Log.d("VideoActivity", "setDetail - 调用 showContent()");
+            mBinding.progressLayout.showContent();
+        }
 
         // 显示内容容器（默认隐藏以显示加载指示器）
         ViewGroup scrollContainer = (ViewGroup) mBinding.scroll.getChildAt(0);
-        scrollContainer.setVisibility(View.VISIBLE);
+        if (!tmdbMode) scrollContainer.setVisibility(View.VISIBLE);
 
         // TMDB 集数处理：排序和应用标题
         if (isIntentTmdbPlayback()) com.fongmi.android.tv.utils.TmdbEpisodeSorter.sort(item);
         applyTmdbEpisodeTitles(item);
 
         // TMDB 模式下隐藏原生标题
-        boolean tmdbMode = isTmdbSourceEnabled() && mTmdbUIAdapter != null && mTmdbUIAdapter.isReady();
         if (tmdbMode) {
             mBinding.name.setVisibility(View.GONE);
         } else {
@@ -624,8 +645,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
                 // 自动搜索匹配
                 mTmdbUIAdapter.autoMatch(item.getName(), item);
             }
-            // TMDB 模式下将线路和选集移到 TMDB 头部
-            moveFlagAndEpisodeToTmdb();
         }
     }
 
@@ -634,7 +653,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
         // 非 TMDB 模式才填充原生字段
         // 基于 TMDB 开关和配置是否就绪
-        boolean tmdbMode = isTmdbSourceEnabled() && mTmdbUIAdapter != null && mTmdbUIAdapter.isReady();
+        boolean tmdbMode = shouldUseTmdbDetailLayout();
         if (!tmdbMode) {
             mBinding.name.setVisibility(View.VISIBLE);
             mBinding.contentLayout.setVisibility(View.VISIBLE);
@@ -665,7 +684,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void setContentVisible() {
         // TMDB 模式下不显示原生简介区域
-        boolean tmdbMode = isTmdbSourceEnabled() && mTmdbUIAdapter != null && mTmdbUIAdapter.isReady();
+        boolean tmdbMode = shouldUseTmdbDetailLayout();
         if (tmdbMode) {
             mBinding.contentLayout.setVisibility(View.GONE);
         } else {
@@ -1489,13 +1508,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
             boolean loaded = mTmdbUIAdapter != null && mTmdbUIAdapter.isLoaded();
             android.util.Log.d("VideoActivity", "updateVod - TMDB isLoaded=" + loaded);
             if (loaded) {
+                mTmdbFallbackToNative = false;
+                moveFlagAndEpisodeToTmdb();
+                mBinding.progressLayout.showContent();
                 mTmdbHeaderView.bind(mTmdbUIAdapter);
             } else {
-                // TMDB 加载失败或跳过，显示空头部（至少显示播放控件）
-                android.util.Log.d("VideoActivity", "TMDB 加载失败，显示空头部并隐藏进度条");
-                mTmdbHeaderView.show();
-                mTmdbContentLoaded = true;
-                hideProgress();
+                android.util.Log.d("VideoActivity", "TMDB 加载失败，回退到原生详情");
+                showNativeDetailFallback(item);
             }
         }
     }
@@ -1585,7 +1604,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         switch (state) {
             case Player.STATE_BUFFERING:
                 // TMDB 模式下，如果内容已经加载完成，不再显示 spinner
-                if (mTmdbHeaderView == null || !isTmdbContentLoaded()) {
+                if (!shouldUseTmdbDetailLayout() || !isTmdbContentLoaded()) {
                     showProgress();
                 }
                 break;
@@ -1594,7 +1613,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
                 // 非 TMDB 模式：立即隐藏进度条
                 // TMDB 模式：等待图片加载完成回调（onImagesLoaded）
                 android.util.Log.d("VideoActivity", "STATE_READY - mTmdbHeaderView=" + (mTmdbHeaderView != null));
-                if (mTmdbHeaderView == null) {
+                if (!shouldUseTmdbDetailLayout()) {
                     hideProgress();
                 }
                 checkControl();
@@ -1891,6 +1910,22 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.nativeContentContainer.setPadding(0, 0, 0, 0);
     }
 
+    private void hideTmdbHeader() {
+        if (mTmdbHeaderView == null || mTmdbHeaderView.getHeaderRoot() == null) return;
+        mTmdbHeaderView.getHeaderRoot().setVisibility(View.GONE);
+    }
+
+    private void showNativeDetailFallback(Vod item) {
+        mTmdbFallbackToNative = true;
+        mTmdbContentLoaded = true;
+        hideTmdbHeader();
+        restoreFlagAndEpisodeFromTmdb();
+        mBinding.videoShadow.setVisibility(View.VISIBLE);
+        setText(item);
+        mBinding.progressLayout.showContent();
+        hideProgress();
+    }
+
     private void moveFlagAndEpisodeToTmdb() {
         // 将站源、线路和选集移到 TMDB 头部的 playback controls 容器中
         if (mTmdbHeaderView == null) return;
@@ -1904,45 +1939,38 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         // 移除旧内容
         playbackControls.removeAllViews();
 
-        // 1. 添加站源
-        View siteView = mBinding.site;
-        ViewGroup siteParent = (ViewGroup) siteView.getParent();
-        if (siteParent != null) {
-            siteParent.removeView(siteView);
-            playbackControls.addView(siteView);
+        for (View view : getTmdbMovableViews()) {
+            rememberTmdbMovedView(view);
+            ViewGroup parent = (ViewGroup) view.getParent();
+            if (parent != null) parent.removeView(view);
+            playbackControls.addView(view);
         }
+        mTmdbControlsMoved = true;
+    }
 
-        // 2. 添加线路标题
-        View flagText = mBinding.flagText;
-        ViewGroup flagTextParent = (ViewGroup) flagText.getParent();
-        if (flagTextParent != null) {
-            flagTextParent.removeView(flagText);
-            playbackControls.addView(flagText);
+    private void restoreFlagAndEpisodeFromTmdb() {
+        if (!mTmdbControlsMoved) return;
+        for (TmdbMovedView item : mTmdbMovedViews) {
+            ViewGroup parent = (ViewGroup) item.view.getParent();
+            if (parent != null) parent.removeView(item.view);
+            item.parent.addView(item.view, Math.min(item.index, item.parent.getChildCount()), item.layoutParams);
         }
+        mTmdbControlsMoved = false;
+    }
 
-        // 3. 添加线路 RecyclerView
-        View flagView = mBinding.flag;
-        ViewGroup flagViewParent = (ViewGroup) flagView.getParent();
-        if (flagViewParent != null) {
-            flagViewParent.removeView(flagView);
-            playbackControls.addView(flagView);
-        }
+    private void rememberTmdbMovedView(View view) {
+        for (TmdbMovedView item : mTmdbMovedViews) if (item.view == view) return;
+        if (view.getParent() instanceof ViewGroup) mTmdbMovedViews.add(new TmdbMovedView(view));
+    }
 
-        // 4. 添加选集标题栏
-        View episodeTitleBar = mBinding.episodeTitleBar;
-        ViewGroup episodeTitleBarParent = (ViewGroup) episodeTitleBar.getParent();
-        if (episodeTitleBarParent != null) {
-            episodeTitleBarParent.removeView(episodeTitleBar);
-            playbackControls.addView(episodeTitleBar);
-        }
-
-        // 5. 添加选集 RecyclerView
-        View episodeView = mBinding.episode;
-        ViewGroup episodeParent = (ViewGroup) episodeView.getParent();
-        if (episodeParent != null) {
-            episodeParent.removeView(episodeView);
-            playbackControls.addView(episodeView);
-        }
+    private View[] getTmdbMovableViews() {
+        return new View[]{
+                mBinding.site,
+                mBinding.flagText,
+                mBinding.flag,
+                mBinding.episodeTitleBar,
+                mBinding.episode,
+        };
     }
 
     private void applyShortDramaMode() {
@@ -2289,6 +2317,20 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         private final int index;
 
         private ShortDramaControlItem(View view) {
+            this.view = view;
+            this.parent = (ViewGroup) view.getParent();
+            this.layoutParams = view.getLayoutParams();
+            this.index = parent.indexOfChild(view);
+        }
+    }
+
+    private static class TmdbMovedView {
+        private final View view;
+        private final ViewGroup parent;
+        private final ViewGroup.LayoutParams layoutParams;
+        private final int index;
+
+        private TmdbMovedView(View view) {
             this.view = view;
             this.parent = (ViewGroup) view.getParent();
             this.layoutParams = view.getLayoutParams();
