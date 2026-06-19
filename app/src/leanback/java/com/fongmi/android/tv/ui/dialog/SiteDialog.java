@@ -32,7 +32,6 @@ import com.fongmi.android.tv.ui.adapter.SiteAdapter;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
-import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
@@ -284,24 +283,24 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
             return;
         }
         if (!TextUtils.isEmpty(selectedGroup) && !groups.contains(selectedGroup)) selectedGroup = "";
+        adapter.filter(selectedGroup, "");
+        setRecyclerHeight();
+        scrollRecyclerToTop();
         binding.groupScroll.setVisibility(View.VISIBLE);
         binding.groupList.removeAllViews();
-        for (String group : groups) binding.groupList.addView(getGroupView(group));
+        binding.groupList.addView(getGroupView("", getDialogActivity().getString(R.string.site_group_all)));
+        for (String group : groups) binding.groupList.addView(getGroupView(group, group));
         updateGroupView();
-        // 让第一个分组按钮获取焦点
-        binding.groupList.post(() -> {
-            if (binding.groupList.getChildCount() > 0) {
-                binding.groupList.getChildAt(0).requestFocus();
-            }
-        });
+        binding.groupList.post(this::requestGroupFocus);
     }
 
-    private androidx.appcompat.widget.AppCompatTextView getGroupView(String group) {
+    private androidx.appcompat.widget.AppCompatTextView getGroupView(String group, String text) {
         androidx.appcompat.widget.AppCompatTextView button = new androidx.appcompat.widget.AppCompatTextView(getDialogActivity());
         LinearLayoutCompat.LayoutParams params = new LinearLayoutCompat.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.setMarginEnd(ResUtil.dp2px(12));
         button.setLayoutParams(params);
-        button.setText(group);
+        button.setTag(group);
+        button.setText(text);
         button.setSingleLine(true);
         button.setAllCaps(false);
         button.setGravity(android.view.Gravity.CENTER);
@@ -311,43 +310,74 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         button.setFocusable(true);
         button.setClickable(true);
         button.setNextFocusDownId(binding.recycler.getId());
-        // 焦点监听：获取焦点时自动切换分组
         button.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) onGroupFocus(group, button);
+            if (hasFocus) selectGroup(group, button);
         });
+        button.setOnClickListener(v -> onGroupClick(group, v));
         return button;
     }
 
-    private void onGroupFocus(String group, View view) {
-        // 如果已经是当前选中的分组，不需要重复处理
-        if (group.equals(selectedGroup)) return;
+    private void requestGroupFocus() {
+        if (binding == null || binding.groupList.getChildCount() == 0) return;
+        View target = findGroupView(selectedGroup);
+        if (target == null) target = binding.groupList.getChildAt(0);
+        target.requestFocus();
+    }
+
+    private void onGroupClick(String group, View view) {
+        if (!TextUtils.isEmpty(group) && group.equals(selectedGroup)) {
+            View all = findGroupView("");
+            if (all != null && all.requestFocus()) return;
+            selectGroup("", all == null ? view : all);
+            return;
+        }
+        selectGroup(group, view);
+    }
+
+    private void selectGroup(String group, View view) {
+        if (binding == null || adapter == null) return;
+        if (group.equals(selectedGroup)) {
+            centerGroup(view);
+            return;
+        }
         selectedGroup = group;
         updateGroupView();
         adapter.filter(selectedGroup, "");
-        // 临时阻止 RecyclerView 的子 View 获取焦点
-        int oldDescendantFocusability = binding.recycler.getDescendantFocusability();
-        binding.recycler.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-        adapter.notifyDataSetChanged();
         setRecyclerHeight();
-        binding.recycler.scrollToPosition(0);
-        // 延迟恢复焦点行为和请求焦点
-        view.postDelayed(() -> {
-            binding.recycler.setDescendantFocusability(oldDescendantFocusability);
-            view.requestFocus();
-        }, 50);
+        scrollRecyclerToTop();
         if (!TextUtils.isEmpty(selectedGroup)) centerGroup(view);
     }
 
+    private void scrollRecyclerToTop() {
+        RecyclerView.LayoutManager manager = binding.recycler.getLayoutManager();
+        if (manager != null) manager.scrollToPosition(0);
+    }
+
     private void updateGroupView() {
+        if (binding == null) return;
         for (int i = 0; i < binding.groupList.getChildCount(); i++) {
             View view = binding.groupList.getChildAt(i);
-            String groupText = ((androidx.appcompat.widget.AppCompatTextView) view).getText().toString();
-            boolean selected = !TextUtils.isEmpty(selectedGroup) && groupText.equals(selectedGroup);
+            String group = (String) view.getTag();
+            boolean selected = TextUtils.equals(group, selectedGroup);
             view.setSelected(selected);
         }
     }
 
+    private View findGroupView(String group) {
+        if (binding == null) return null;
+        for (int i = 0; i < binding.groupList.getChildCount(); i++) {
+            View child = binding.groupList.getChildAt(i);
+            if (TextUtils.equals(group, (String) child.getTag())) return child;
+        }
+        return null;
+    }
+
     private void centerGroup(View view) {
-        binding.groupScroll.post(() -> binding.groupScroll.smoothScrollTo(Math.max(0, view.getLeft() + view.getWidth() / 2 - binding.groupScroll.getWidth() / 2), 0));
+        DialogSiteBinding current = binding;
+        if (current == null) return;
+        current.groupScroll.post(() -> {
+            if (binding != current) return;
+            current.groupScroll.smoothScrollTo(Math.max(0, view.getLeft() + view.getWidth() / 2 - current.groupScroll.getWidth() / 2), 0);
+        });
     }
 }
