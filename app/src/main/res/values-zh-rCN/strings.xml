@@ -772,6 +772,7 @@
     <string name="player">播放核心</string>
     <string name="player_default">默认播放核心</string>
     <string name="player_render">渲染方式</string>
+    <string name="player_kernel">播放器内核</string>
     <string name="player_scale">缩放比例</string>
     <string name="player_libass">字幕渲染</string>
     <string name="player_caption">字幕样式</string>
@@ -786,6 +787,7 @@
     <string name="player_buffer">缓冲时间</string>
     <string name="player_speed">长按倍速</string>
     <string name="player_ua">User-Agent</string>
+    <string name="player_osd">屏显设置</string>
 
     <!-- Danmaku -->
     <string name="danmaku_load">弹幕加载</string>
@@ -892,6 +894,11 @@
         <item>硬解</item>
     </string-array>
 
+    <string-array name="select_player_kernel">
+        <item>EXO</item>
+        <item>IJK</item>
+    </string-array>
+
     <string-array name="select_size">
         <item>小</item>
         <item>中</item>
@@ -949,6 +956,14 @@
     <string-array name="select_caption">
         <item>预设</item>
         <item>系统</item>
+    </string-array>
+
+    <string-array name="select_player_osd">
+        <item>标题</item>
+        <item>时间</item>
+        <item>进度</item>
+        <item>网速</item>
+        <item>迷你</item>
     </string-array>
 
     <string-array name="select_track">

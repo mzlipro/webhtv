@@ -82,6 +82,7 @@ import com.fongmi.android.tv.ui.base.ViewType;
 import com.fongmi.android.tv.ui.custom.CustomKeyDown;
 import com.fongmi.android.tv.ui.custom.CustomMovement;
 import com.fongmi.android.tv.ui.custom.CustomSeekView;
+import com.fongmi.android.tv.ui.custom.PlayerOsdController;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.ui.dialog.CastDialog;
 import com.fongmi.android.tv.ui.dialog.ControlDialog;
@@ -131,6 +132,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private ParseAdapter mParseAdapter;
     private SiteViewModel mViewModel;
     private FlagAdapter mFlagAdapter;
+    private PlayerOsdController mOsd;
     private ValueAnimator mAnimator;
     private CustomKeyDown mKeyDown;
     private List<String> mBroken;
@@ -311,6 +313,14 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         return (com.fongmi.android.tv.bean.TmdbItem) getIntent().getSerializableExtra("tmdbItem");
     }
 
+    private String getOsdTitle() {
+        String name = getName();
+        if (mEpisodeAdapter == null || mEpisodeAdapter.isEmpty()) return name;
+        String episode = Objects.toString(getEpisode().getName(), "");
+        if (TextUtils.isEmpty(episode) || TextUtils.equals(name, episode)) return name;
+        return TextUtils.isEmpty(name) ? episode : name + " " + episode;
+    }
+
     private int getScale() {
         return mHistory != null && mHistory.getScale() != -1 ? mHistory.getScale() : PlayerSetting.getScale();
     }
@@ -359,6 +369,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     protected void onServiceConnected() {
         player().setDanmakuController(mBinding.exo.getDanmakuController());
         player().setDanmakuEnabled(DanmakuSetting.isShow());
+        setPlayerKernel();
+        setDecode();
         checkLand();
         checkId();
     }
@@ -397,6 +409,17 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mPiP = new PiP();
         checkDanmakuImg();
         setRecyclerView();
+        mOsd = new PlayerOsdController(mBinding.osd.getRoot(), mBinding.osd.osdTopLeft, mBinding.osd.osdTopRight, mBinding.osd.osdBottomLeft, mBinding.osd.osdBottomRight, new PlayerOsdController.Source() {
+            @Override
+            public PlayerManager getPlayer() {
+                return service() == null ? null : player();
+            }
+
+            @Override
+            public String getTitle() {
+                return getOsdTitle();
+            }
+        }, 14f, 12f);
         setVideoView();
         setViewModel();
         initTmdbMode();
@@ -443,7 +466,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
         mBinding.control.action.title.setOnClickListener(view -> onTitle());
-        mBinding.control.action.player.setOnClickListener(view -> onChoose());
+        mBinding.control.action.player.setOnClickListener(view -> onPlayerKernel());
+        mBinding.control.action.player.setOnLongClickListener(view -> onChooseLong());
         mBinding.control.action.decode.setOnClickListener(view -> onDecode());
         mBinding.control.action.ending.setOnClickListener(view -> onEnding());
         mBinding.control.action.repeat.setOnClickListener(view -> onRepeat());
@@ -536,6 +560,10 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void setDecode() {
         mBinding.control.action.decode.setText(player().getDecodeText());
+    }
+
+    private void setPlayerKernel() {
+        mBinding.control.action.player.setText(player().getPlayerText());
     }
 
     private void setScale(int scale) {
@@ -789,7 +817,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.swipeLayout.setRefreshing(false);
         setQualityVisible(result.getUrl().isMulti());
         result.getUrl().set(mQualityAdapter.getPosition());
-        if (result.hasArtwork()) setArtwork(result.getArtwork());
+        if (result.hasArtwork() && !shouldKeepPushArtwork()) setArtwork(result.getArtwork());
         if (result.hasPosition()) mHistory.setPosition(result.getPosition());
         if (result.hasDesc()) setText(mBinding.content, 0, result.getDesc());
         mBinding.control.parse.setVisibility(isUseParse() ? View.VISIBLE : View.GONE);
@@ -1154,6 +1182,19 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         }).show();
     }
 
+    private boolean onChooseLong() {
+        onChoose();
+        return true;
+    }
+
+    private void onPlayerKernel() {
+        mClock.setCallback(null);
+        player().togglePlayer();
+        setPlayerKernel();
+        setDecode();
+        setR1Callback();
+    }
+
     private boolean onTextLong() {
         if (!player().haveTrack(C.TRACK_TYPE_TEXT)) return false;
         onSubtitleClick();
@@ -1407,8 +1448,16 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.action.speed.setText(player().setSpeed(mHistory.getSpeed()));
         mHistory.setVodName(item.getName());
         PlaybackEventCollector.get().updateHistory(mHistory);
-        setArtwork(item.getPic());
+        setArtwork(getInitialArtwork(item));
         setScale(getScale());
+    }
+
+    private boolean shouldKeepPushArtwork() {
+        return SiteApi.PUSH.equals(getKey()) && !TextUtils.isEmpty(getPic());
+    }
+
+    private String getInitialArtwork(Vod item) {
+        return shouldKeepPushArtwork() ? getPic() : item.getPic();
     }
 
     private boolean hasInitialPreview() {
@@ -2296,6 +2345,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         super.onStart();
         android.util.Log.d("VideoActivity", "onStart: calling mClock.stop().start()");
         mClock.stop().start();
+        if (mOsd != null) mOsd.start();
         setAudioOnly(false);
         setStop(false);
     }
@@ -2303,6 +2353,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     protected void onStop() {
         super.onStop();
+        if (mOsd != null) mOsd.stop();
         if (PlayerSetting.isBackgroundOff()) mClock.stop();
         if (!isAudioOnly()) setStop(true);
     }
@@ -2330,6 +2381,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         DanmakuApi.cancel();
         RefreshEvent.keep();
         App.removeCallbacks(mR1, mR2, mR3, mR4);
+        if (mOsd != null) mOsd.release();
         mViewModel.getResult().removeObserver(mObserveDetail);
         mViewModel.getPlayer().removeObserver(mObservePlayer);
         mViewModel.getSearch().removeObserver(mObserveSearch);

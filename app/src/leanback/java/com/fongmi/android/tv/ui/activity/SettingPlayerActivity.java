@@ -20,6 +20,7 @@ import com.fongmi.android.tv.ui.dialog.BufferDialog;
 import com.fongmi.android.tv.ui.dialog.SpeedDialog;
 import com.fongmi.android.tv.ui.dialog.UaDialog;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.text.DecimalFormat;
 
@@ -29,8 +30,10 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
     private DecimalFormat format;
     private String[] caption;
     private String[] player;
+    private String[] kernel;
     private String[] render;
     private String[] scale;
+    private String[] osd;
 
     public static void start(Activity activity) {
         activity.startActivity(new Intent(activity, SettingPlayerActivity.class));
@@ -62,6 +65,8 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         mBinding.audioDecodeText.setText(getSwitch(PlayerSetting.isAudioPrefer()));
         mBinding.videoDecodeText.setText(getSwitch(PlayerSetting.isVideoPrefer()));
         mBinding.playerText.setText((player = ResUtil.getStringArray(R.array.select_player))[PlayerSetting.getPlayer()]);
+        mBinding.osdText.setText(getOsdText(osd = ResUtil.getStringArray(R.array.select_player_osd)));
+        mBinding.kernelText.setText((kernel = ResUtil.getStringArray(R.array.select_player_kernel))[PlayerSetting.getPlayer()]);
         mBinding.scaleText.setText((scale = ResUtil.getStringArray(R.array.select_scale))[PlayerSetting.getScale()]);
         mBinding.renderText.setText((render = ResUtil.getStringArray(R.array.select_render))[PlayerSetting.getRender()]);
         mBinding.captionText.setText((caption = ResUtil.getStringArray(R.array.select_caption))[PlayerSetting.isCaption() ? 1 : 0]);
@@ -72,7 +77,9 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         mBinding.ua.setOnClickListener(this::onUa);
         mBinding.player.setOnClickListener(this::setPlayer);
         mBinding.aac.setOnClickListener(this::setAAC);
+        mBinding.kernel.setOnClickListener(this::setKernel);
         mBinding.scale.setOnClickListener(this::setScale);
+        mBinding.osd.setOnClickListener(this::onOsd);
         mBinding.speed.setOnClickListener(this::onSpeed);
         mBinding.buffer.setOnClickListener(this::onBuffer);
         mBinding.render.setOnClickListener(this::setRender);
@@ -110,6 +117,14 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
     private void setPlayer(View view) {
         int index = (PlayerSetting.getPlayer() + 1) % player.length;
         mBinding.playerText.setText(player[index]);
+        mBinding.kernelText.setText(kernel[index]);
+        PlayerSetting.putPlayer(index);
+    }
+
+    private void setKernel(View view) {
+        int index = PlayerSetting.getPlayer() == PlayerSetting.EXO ? PlayerSetting.IJK : PlayerSetting.EXO;
+        mBinding.playerText.setText(player[index]);
+        mBinding.kernelText.setText(kernel[index]);
         PlayerSetting.putPlayer(index);
     }
 
@@ -117,6 +132,37 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         int index = (PlayerSetting.getScale() + 1) % scale.length;
         mBinding.scaleText.setText(scale[index]);
         PlayerSetting.putScale(index);
+    }
+
+    private void onOsd(View view) {
+        boolean[] checked = getOsdChecked();
+        new MaterialAlertDialogBuilder(this).setTitle(R.string.player_osd).setNegativeButton(R.string.dialog_negative, null).setPositiveButton(R.string.dialog_positive, (dialog, which) -> {
+            setOsdChecked(checked);
+            mBinding.osdText.setText(getOsdText(osd));
+        }).setMultiChoiceItems(osd, checked, (dialog, which, isChecked) -> checked[which] = isChecked).show();
+    }
+
+    private boolean[] getOsdChecked() {
+        return new boolean[]{PlayerSetting.isOsdTitle(), PlayerSetting.isOsdTime(), PlayerSetting.isOsdProgress(), PlayerSetting.isOsdTraffic(), PlayerSetting.isOsdMini()};
+    }
+
+    private void setOsdChecked(boolean[] checked) {
+        PlayerSetting.putOsdTitle(checked[0]);
+        PlayerSetting.putOsdTime(checked[1]);
+        PlayerSetting.putOsdProgress(checked[2]);
+        PlayerSetting.putOsdTraffic(checked[3]);
+        PlayerSetting.putOsdMini(checked[4]);
+    }
+
+    private String getOsdText(String[] items) {
+        boolean[] checked = getOsdChecked();
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < checked.length; i++) {
+            if (!checked[i]) continue;
+            if (builder.length() > 0) builder.append(" / ");
+            builder.append(items[i]);
+        }
+        return builder.length() == 0 ? getString(R.string.setting_off) : builder.toString();
     }
 
     private void onSpeed(View view) {

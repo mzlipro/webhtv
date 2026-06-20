@@ -223,7 +223,7 @@ public class PlayerManager implements ParseCallback {
     }
 
     public String getPlayerText() {
-        return ResUtil.getStringArray(R.array.select_player)[playerType];
+        return ResUtil.getStringArray(R.array.select_player_kernel)[playerType];
     }
 
     public int getPlayerType() {
@@ -429,6 +429,7 @@ public class PlayerManager implements ParseCallback {
         int decode = engine.getDecode();
         engine.release();
         playerType = type;
+        PlayerSetting.putPlayer(type);
         engine = buildEngine(playerType, decode);
         player = engine.getPlayer();
         callback.onPlayerRebuild(player);
@@ -445,7 +446,7 @@ public class PlayerManager implements ParseCallback {
     }
 
     private PlayerEngine buildEngine(int type, int decode) {
-        return type == 1 ? new IjkPlayerEngine(decode, listener) : new ExoPlayerEngine(decode, listener);
+        return type == PlayerSetting.IJK ? new IjkPlayerEngine(decode, listener) : new ExoPlayerEngine(decode, listener);
     }
 
     public void browse(PlaySpec spec) {
