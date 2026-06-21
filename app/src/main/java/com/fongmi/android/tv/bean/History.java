@@ -15,6 +15,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Diffable;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
@@ -27,6 +28,9 @@ import java.util.concurrent.TimeUnit;
 
 @Entity
 public class History implements Diffable<History> {
+
+    private static final long HISTORY_REFRESH_DEBOUNCE = 500;
+    private static final Runnable HISTORY_REFRESH = RefreshEvent::history;
 
     @NonNull
     @PrimaryKey
@@ -131,7 +135,7 @@ public class History implements Diffable<History> {
     }
 
     public static void delete(int cid) {
-        AppDatabase.get().getHistoryDao().delete(cid);
+        if (AppDatabase.get().getHistoryDao().delete(cid) > 0) notifyChanged();
     }
 
     public static void sync(List<History> targets) {
@@ -382,15 +386,31 @@ public class History implements Diffable<History> {
     }
 
     public History save() {
+        History before = find(getKey());
+        boolean notify = recommendationIdentityChanged(before, this);
         updateTime = System.currentTimeMillis();
         AppDatabase.get().getHistoryDao().insertOrUpdate(this);
+        if (notify) notifyChanged();
         return this;
     }
 
     public History delete() {
-        AppDatabase.get().getHistoryDao().delete(VodConfig.getCid(), getKey());
+        boolean deleted = AppDatabase.get().getHistoryDao().delete(VodConfig.getCid(), getKey()) > 0;
         AppDatabase.get().getTrackDao().delete(getKey());
+        if (deleted) notifyChanged();
         return this;
+    }
+
+    private static void notifyChanged() {
+        App.post(HISTORY_REFRESH, HISTORY_REFRESH_DEBOUNCE);
+    }
+
+    private static boolean recommendationIdentityChanged(History before, History after) {
+        if (after == null || TextUtils.isEmpty(after.getVodName())) return false;
+        if (before == null) return true;
+        return before.getCid() != after.getCid()
+                || !TextUtils.equals(before.getKey(), after.getKey())
+                || !TextUtils.equals(before.getVodName(), after.getVodName());
     }
 
     public void findEpisode(List<Flag> flags) {

@@ -9,6 +9,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
 import com.fongmi.android.tv.R;
@@ -66,6 +67,10 @@ public class TmdbHeaderView {
     private com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter personalTmdbRecommendationAdapter;
     private com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter personalDoubanRecommendationAdapter;
     private com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter recommendationAdapter;
+    private TmdbUIAdapter boundAdapter;
+    private boolean loadingRecommendations;
+    private boolean loadingPersonalTmdbRecommendations;
+    private boolean loadingPersonalDoubanRecommendations;
 
     private OnImagesLoadedListener imagesLoadedListener;
     private ActionListener actionListener;
@@ -138,6 +143,7 @@ public class TmdbHeaderView {
         }
 
         android.util.Log.d("TmdbHeaderView", "bind() 开始，标题=" + item.getTitle());
+        boundAdapter = adapter;
 
         // 背景图（backdrop）- 改为幻灯片模式
         backdropView = headerRoot.findViewById(R.id.tmdbBackdrop);
@@ -273,6 +279,15 @@ public class TmdbHeaderView {
         if (headerRoot != null) headerRoot.setVisibility(View.VISIBLE);
     }
 
+    public void refreshPersonalRecommendations() {
+        if (boundAdapter == null || headerRoot == null) return;
+        boundAdapter.refreshPersonalRecommendations(changed -> {
+            if (!changed || headerRoot == null) return;
+            bindRecommendationRow(R.id.tmdbPersonalTmdbRecommendationsLabel, R.id.tmdbPersonalTmdbRecommendations, personalTmdbRecommendationAdapter, boundAdapter.getPersonalTmdbRecommendations());
+            bindRecommendationRow(R.id.tmdbPersonalDoubanRecommendationsLabel, R.id.tmdbPersonalDoubanRecommendations, personalDoubanRecommendationAdapter, boundAdapter.getPersonalDoubanRecommendations());
+        });
+    }
+
     private void setupRecyclerViews() {
         RecyclerView castRv = headerRoot.findViewById(R.id.tmdbCast);
         castAdapter = new TmdbCastAdapter();
@@ -293,16 +308,19 @@ public class TmdbHeaderView {
         personalTmdbRecommendationAdapter = new com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter();
         personalTmdbRecommendationAdapter.setOnItemClickListener(this::onRecommendationClick);
         personalTmdbRecommendationsRv.setAdapter(personalTmdbRecommendationAdapter);
+        attachLazyLoader(personalTmdbRecommendationsRv, RecommendationRow.PERSONAL_TMDB);
 
         RecyclerView personalDoubanRecommendationsRv = headerRoot.findViewById(R.id.tmdbPersonalDoubanRecommendations);
         personalDoubanRecommendationAdapter = new com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter();
         personalDoubanRecommendationAdapter.setOnItemClickListener(this::onRecommendationClick);
         personalDoubanRecommendationsRv.setAdapter(personalDoubanRecommendationAdapter);
+        attachLazyLoader(personalDoubanRecommendationsRv, RecommendationRow.PERSONAL_DOUBAN);
 
         RecyclerView recommendationsRv = headerRoot.findViewById(R.id.tmdbRecommendations);
         recommendationAdapter = new com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter();
         recommendationAdapter.setOnItemClickListener(this::onRecommendationClick);
         recommendationsRv.setAdapter(recommendationAdapter);
+        attachLazyLoader(recommendationsRv, RecommendationRow.RECOMMENDATIONS);
     }
 
     private void bindRecommendationRow(int labelId, int recyclerId, com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter adapter, List<TmdbItem> items) {
@@ -312,9 +330,58 @@ public class TmdbHeaderView {
             recyclerView.setVisibility(View.VISIBLE);
             adapter.setItems(items);
         } else {
+            adapter.setItems(new ArrayList<>());
             headerRoot.findViewById(labelId).setVisibility(View.GONE);
             headerRoot.findViewById(recyclerId).setVisibility(View.GONE);
         }
+    }
+
+    private void attachLazyLoader(RecyclerView recyclerView, RecommendationRow row) {
+        recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                if (dx <= 0 || !isNearRowEnd(recyclerView)) return;
+                loadMore(row);
+            }
+        });
+    }
+
+    private boolean isNearRowEnd(RecyclerView recyclerView) {
+        RecyclerView.Adapter<?> adapter = recyclerView.getAdapter();
+        RecyclerView.LayoutManager manager = recyclerView.getLayoutManager();
+        if (adapter == null || !(manager instanceof LinearLayoutManager)) return false;
+        int lastVisible = ((LinearLayoutManager) manager).findLastVisibleItemPosition();
+        return lastVisible >= 0 && adapter.getItemCount() - lastVisible <= 4;
+    }
+
+    private void loadMore(RecommendationRow row) {
+        if (boundAdapter == null) return;
+        if (row == RecommendationRow.RECOMMENDATIONS) {
+            if (loadingRecommendations || !boundAdapter.hasMoreRecommendations()) return;
+            loadingRecommendations = true;
+            boundAdapter.loadMoreRecommendations(changed -> {
+                loadingRecommendations = false;
+                if (changed) recommendationAdapter.setItems(boundAdapter.getRecommendations());
+            });
+        } else if (row == RecommendationRow.PERSONAL_TMDB) {
+            if (loadingPersonalTmdbRecommendations || !boundAdapter.hasMorePersonalTmdbRecommendations()) return;
+            loadingPersonalTmdbRecommendations = true;
+            boundAdapter.loadMorePersonalTmdbRecommendations(changed -> {
+                loadingPersonalTmdbRecommendations = false;
+                if (changed) personalTmdbRecommendationAdapter.setItems(boundAdapter.getPersonalTmdbRecommendations());
+            });
+        } else if (row == RecommendationRow.PERSONAL_DOUBAN) {
+            if (loadingPersonalDoubanRecommendations || !boundAdapter.hasMorePersonalDoubanRecommendations()) return;
+            loadingPersonalDoubanRecommendations = true;
+            boundAdapter.loadMorePersonalDoubanRecommendations(changed -> {
+                loadingPersonalDoubanRecommendations = false;
+                if (changed) personalDoubanRecommendationAdapter.setItems(boundAdapter.getPersonalDoubanRecommendations());
+            });
+        }
+    }
+
+    private enum RecommendationRow {
+        RECOMMENDATIONS, PERSONAL_TMDB, PERSONAL_DOUBAN
     }
 
     private void setupActions() {

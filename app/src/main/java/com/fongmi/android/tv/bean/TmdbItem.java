@@ -1,8 +1,8 @@
 package com.fongmi.android.tv.bean;
 
-import android.text.TextUtils;
-
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TmdbItem implements Serializable {
 
@@ -19,6 +19,7 @@ public class TmdbItem implements Serializable {
     private final double rating;
     private final String originalLanguage;
     private final String originCountry;
+    private final List<Integer> genreIds;
 
     public TmdbItem(int tmdbId, String mediaType, String title, String subtitle, String overview, String posterUrl, String backdropUrl) {
         this(tmdbId, mediaType, title, subtitle, overview, posterUrl, backdropUrl, "", 0.0);
@@ -33,6 +34,10 @@ public class TmdbItem implements Serializable {
     }
 
     public TmdbItem(int tmdbId, String mediaType, String title, String subtitle, String overview, String posterUrl, String backdropUrl, String credit, double rating, String originalLanguage, String originCountry) {
+        this(tmdbId, mediaType, title, subtitle, overview, posterUrl, backdropUrl, credit, rating, originalLanguage, originCountry, new ArrayList<>());
+    }
+
+    public TmdbItem(int tmdbId, String mediaType, String title, String subtitle, String overview, String posterUrl, String backdropUrl, String credit, double rating, String originalLanguage, String originCountry, List<Integer> genreIds) {
         this.tmdbId = tmdbId;
         this.mediaType = mediaType;
         this.title = title;
@@ -44,6 +49,7 @@ public class TmdbItem implements Serializable {
         this.rating = rating;
         this.originalLanguage = originalLanguage;
         this.originCountry = originCountry;
+        this.genreIds = genreIds == null ? new ArrayList<>() : new ArrayList<>(genreIds);
     }
 
     public int getTmdbId() {
@@ -51,31 +57,31 @@ public class TmdbItem implements Serializable {
     }
 
     public String getMediaType() {
-        return TextUtils.isEmpty(mediaType) ? "" : mediaType;
+        return isEmpty(mediaType) ? "" : mediaType;
     }
 
     public String getTitle() {
-        return TextUtils.isEmpty(title) ? "" : title;
+        return isEmpty(title) ? "" : title;
     }
 
     public String getSubtitle() {
-        return TextUtils.isEmpty(subtitle) ? "" : subtitle;
+        return isEmpty(subtitle) ? "" : subtitle;
     }
 
     public String getOverview() {
-        return TextUtils.isEmpty(overview) ? "" : overview;
+        return isEmpty(overview) ? "" : overview;
     }
 
     public String getPosterUrl() {
-        return TextUtils.isEmpty(posterUrl) ? "" : posterUrl;
+        return isEmpty(posterUrl) ? "" : posterUrl;
     }
 
     public String getBackdropUrl() {
-        return TextUtils.isEmpty(backdropUrl) ? "" : backdropUrl;
+        return isEmpty(backdropUrl) ? "" : backdropUrl;
     }
 
     public String getCredit() {
-        return TextUtils.isEmpty(credit) ? "" : credit;
+        return isEmpty(credit) ? "" : credit;
     }
 
     public double getRating() {
@@ -83,11 +89,15 @@ public class TmdbItem implements Serializable {
     }
 
     public String getOriginalLanguage() {
-        return TextUtils.isEmpty(originalLanguage) ? "" : originalLanguage;
+        return isEmpty(originalLanguage) ? "" : originalLanguage;
     }
 
     public String getOriginCountry() {
-        return TextUtils.isEmpty(originCountry) ? "" : originCountry;
+        return isEmpty(originCountry) ? "" : originCountry;
+    }
+
+    public List<Integer> getGenreIds() {
+        return new ArrayList<>(genreIds);
     }
 
     public boolean isTv() {
@@ -96,5 +106,9 @@ public class TmdbItem implements Serializable {
 
     public boolean isMovie() {
         return "movie".equals(mediaType);
+    }
+
+    private boolean isEmpty(String value) {
+        return value == null || value.length() == 0;
     }
 }

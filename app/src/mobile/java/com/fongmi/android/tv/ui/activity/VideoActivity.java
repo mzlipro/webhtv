@@ -137,6 +137,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private ParseAdapter mParseAdapter;
     private TmdbRecommendationAdapter mPersonalTmdbRecommendationAdapter;
     private TmdbRecommendationAdapter mPersonalDoubanRecommendationAdapter;
+    private PersonalRecommendationService.RecommendationPage mNativePersonalTmdbPage;
+    private PersonalRecommendationService.RecommendationPage mNativePersonalDoubanPage;
     private SiteViewModel mViewModel;
     private FlagAdapter mFlagAdapter;
     private PlayerOsdController mOsd;
@@ -153,6 +155,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private boolean detailHealthRecorded;
     private boolean playHealthRecorded;
     private boolean episodeGridMode;
+    private boolean mNativePersonalTmdbLoading;
+    private boolean mNativePersonalDoubanLoading;
     private Runnable mR1;
     private Runnable mR2;
     private Runnable mR3;
@@ -518,11 +522,23 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.tmdbPersonalTmdbRecommendations.addItemDecoration(new SpaceItemDecoration(8));
         mBinding.tmdbPersonalTmdbRecommendations.setAdapter(mPersonalTmdbRecommendationAdapter = new TmdbRecommendationAdapter());
         mPersonalTmdbRecommendationAdapter.setOnItemClickListener(this::onPersonalRecommendationClick);
+        mBinding.tmdbPersonalTmdbRecommendations.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (dx > 0 && isNearRecommendationRowEnd(recyclerView)) loadMoreNativePersonalRecommendations(true);
+            }
+        });
         mBinding.tmdbPersonalDoubanRecommendations.setHasFixedSize(true);
         mBinding.tmdbPersonalDoubanRecommendations.setItemAnimator(null);
         mBinding.tmdbPersonalDoubanRecommendations.addItemDecoration(new SpaceItemDecoration(8));
         mBinding.tmdbPersonalDoubanRecommendations.setAdapter(mPersonalDoubanRecommendationAdapter = new TmdbRecommendationAdapter());
         mPersonalDoubanRecommendationAdapter.setOnItemClickListener(this::onPersonalRecommendationClick);
+        mBinding.tmdbPersonalDoubanRecommendations.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (dx > 0 && isNearRecommendationRowEnd(recyclerView)) loadMoreNativePersonalRecommendations(false);
+            }
+        });
         mBinding.episode.setHasFixedSize(true);
         mBinding.episode.setItemAnimator(null);
         mBinding.episode.addItemDecoration(new SpaceItemDecoration(8));
@@ -682,11 +698,11 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mTmdbAutoDialogShown = false;
         if (tmdbMode) {
             hideTmdbHeader();
-            mBinding.videoShadow.setVisibility(View.GONE);
+            if (mBinding.videoShadow != null) mBinding.videoShadow.setVisibility(View.GONE);
             mBinding.progressLayout.showProgress();
         } else {
             restoreFlagAndEpisodeFromTmdb();
-            mBinding.videoShadow.setVisibility(View.VISIBLE);
+            if (mBinding.videoShadow != null) mBinding.videoShadow.setVisibility(View.VISIBLE);
             android.util.Log.d("VideoActivity", "setDetail - 调用 showContent()");
             mBinding.progressLayout.showContent();
         }
@@ -1844,6 +1860,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         if (event.getType() == RefreshEvent.Type.DETAIL) getDetail();
         else if (event.getType() == RefreshEvent.Type.PLAYER) onRefresh();
         else if (event.getType() == RefreshEvent.Type.VOD) updateVod(event.getVod());
+        else if (event.getType() == RefreshEvent.Type.HISTORY) refreshPersonalRecommendationsForHistory();
         else if (event.getType() == RefreshEvent.Type.SUBTITLE) player().setSub(Sub.from(event.getPath()));
         else if (event.getType() == RefreshEvent.Type.DANMAKU) player().setDanmaku(Danmaku.from(event.getPath()));
     }
@@ -2083,13 +2100,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
         // TMDB 模式下：隐藏原生内容元素（但保持容器可见，因为 TMDB 内容也在里面）
         mBinding.contentLayout.setVisibility(View.GONE);
-        mBinding.videoShadow.setVisibility(View.GONE);  // 隐藏播放器下方的阴影
+        if (mBinding.videoShadow != null) mBinding.videoShadow.setVisibility(View.GONE);  // 隐藏播放器下方的阴影
 
         // 设置 ScrollView 背景为黑色（与 TMDB 头部一致）
         mBinding.scroll.setBackgroundColor(0xFF0F141A);  // #0F141A
 
         // 移除 nativeContentContainer 的 padding，避免空白间隔
-        mBinding.nativeContentContainer.setPadding(0, 0, 0, 0);
+        if (mBinding.nativeContentContainer != null) mBinding.nativeContentContainer.setPadding(0, 0, 0, 0);
     }
 
     private void hideTmdbHeader() {
@@ -2102,7 +2119,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mTmdbContentLoaded = true;
         hideTmdbHeader();
         restoreFlagAndEpisodeFromTmdb();
-        mBinding.videoShadow.setVisibility(View.VISIBLE);
+        if (mBinding.videoShadow != null) mBinding.videoShadow.setVisibility(View.VISIBLE);
         setText(item);
         mBinding.progressLayout.showContent();
         loadNativePersonalRecommendations(item);
@@ -2117,7 +2134,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         }
         clearNativePersonalRecommendations();
         Task.execute(() -> {
-            PersonalRecommendationService.Recommendations recommendations = new PersonalRecommendationService().load(item, null, null);
+            PersonalRecommendationService.RecommendationPages recommendations = new PersonalRecommendationService().loadPage(item, null, null, 0, PersonalRecommendationService.DEFAULT_PAGE_SIZE);
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed() || generation != mPersonalRecommendationGeneration) return;
                 bindNativePersonalRecommendations(recommendations);
@@ -2125,13 +2142,15 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         });
     }
 
-    private void bindNativePersonalRecommendations(PersonalRecommendationService.Recommendations recommendations) {
-        if (recommendations == null || recommendations.isEmpty()) {
+    private void bindNativePersonalRecommendations(PersonalRecommendationService.RecommendationPages recommendations) {
+        if (recommendations == null || (recommendations.getTmdb().getItems().isEmpty() && recommendations.getDouban().getItems().isEmpty())) {
             clearNativePersonalRecommendations();
             return;
         }
-        bindNativePersonalRecommendationRow(mBinding.tmdbPersonalTmdbRecommendationsLabel, mBinding.tmdbPersonalTmdbRecommendations, mPersonalTmdbRecommendationAdapter, recommendations.getTmdb());
-        bindNativePersonalRecommendationRow(mBinding.tmdbPersonalDoubanRecommendationsLabel, mBinding.tmdbPersonalDoubanRecommendations, mPersonalDoubanRecommendationAdapter, recommendations.getDouban());
+        mNativePersonalTmdbPage = recommendations.getTmdb();
+        mNativePersonalDoubanPage = recommendations.getDouban();
+        bindNativePersonalRecommendationRow(mBinding.tmdbPersonalTmdbRecommendationsLabel, mBinding.tmdbPersonalTmdbRecommendations, mPersonalTmdbRecommendationAdapter, mNativePersonalTmdbPage.getItems());
+        bindNativePersonalRecommendationRow(mBinding.tmdbPersonalDoubanRecommendationsLabel, mBinding.tmdbPersonalDoubanRecommendations, mPersonalDoubanRecommendationAdapter, mNativePersonalDoubanPage.getItems());
     }
 
     private void bindNativePersonalRecommendationRow(View label, View recycler, TmdbRecommendationAdapter adapter, List<TmdbItem> items) {
@@ -2152,6 +2171,10 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void clearNativePersonalRecommendations() {
+        mNativePersonalTmdbPage = null;
+        mNativePersonalDoubanPage = null;
+        mNativePersonalTmdbLoading = false;
+        mNativePersonalDoubanLoading = false;
         if (mPersonalTmdbRecommendationAdapter != null) mPersonalTmdbRecommendationAdapter.setItems(new ArrayList<>());
         if (mPersonalDoubanRecommendationAdapter != null) mPersonalDoubanRecommendationAdapter.setItems(new ArrayList<>());
         mBinding.tmdbPersonalTmdbRecommendationsLabel.setVisibility(View.GONE);
@@ -2162,6 +2185,55 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void onPersonalRecommendationClick(TmdbItem item) {
         TmdbNavigation.open(this, item, getSite());
+    }
+
+    private void refreshPersonalRecommendationsForHistory() {
+        if (!Setting.isPersonalRecommendation() || mVod == null) return;
+        if (mTmdbHeaderView != null && mTmdbUIAdapter != null && mTmdbUIAdapter.isLoaded() && !mTmdbFallbackToNative) {
+            mTmdbHeaderView.refreshPersonalRecommendations();
+        } else if (mTmdbFallbackToNative || !shouldUseTmdbDetailLayout()) {
+            loadNativePersonalRecommendations(mVod);
+        }
+    }
+
+    private boolean isNearRecommendationRowEnd(RecyclerView recyclerView) {
+        RecyclerView.Adapter<?> adapter = recyclerView.getAdapter();
+        RecyclerView.LayoutManager manager = recyclerView.getLayoutManager();
+        if (adapter == null || !(manager instanceof LinearLayoutManager)) return false;
+        int lastVisible = ((LinearLayoutManager) manager).findLastVisibleItemPosition();
+        return lastVisible >= 0 && adapter.getItemCount() - lastVisible <= 4;
+    }
+
+    private void loadMoreNativePersonalRecommendations(boolean tmdb) {
+        PersonalRecommendationService.RecommendationPage page = tmdb ? mNativePersonalTmdbPage : mNativePersonalDoubanPage;
+        if (page == null || !page.hasMore() || (tmdb ? mNativePersonalTmdbLoading : mNativePersonalDoubanLoading) || mVod == null) return;
+        int generation = mPersonalRecommendationGeneration;
+        if (tmdb) mNativePersonalTmdbLoading = true;
+        else mNativePersonalDoubanLoading = true;
+        Task.execute(() -> {
+            PersonalRecommendationService.RecommendationPage nextPage;
+            try {
+                nextPage = tmdb
+                        ? new PersonalRecommendationService().loadTmdbPage(mVod, null, null, page.getNextOffset(), PersonalRecommendationService.DEFAULT_PAGE_SIZE)
+                        : new PersonalRecommendationService().loadDoubanPage(mVod, page.getNextOffset(), PersonalRecommendationService.DEFAULT_PAGE_SIZE);
+            } catch (Throwable e) {
+                SpiderDebug.log("personal-rec", "native load more failed tmdb=%s error=%s", tmdb, e.getMessage());
+                nextPage = page;
+            }
+            PersonalRecommendationService.RecommendationPage loadedPage = nextPage;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || generation != mPersonalRecommendationGeneration) return;
+                if (tmdb) {
+                    mNativePersonalTmdbLoading = false;
+                    mNativePersonalTmdbPage = loadedPage;
+                    mPersonalTmdbRecommendationAdapter.appendItems(loadedPage.getItems());
+                } else {
+                    mNativePersonalDoubanLoading = false;
+                    mNativePersonalDoubanPage = loadedPage;
+                    mPersonalDoubanRecommendationAdapter.appendItems(loadedPage.getItems());
+                }
+            });
+        });
     }
 
     private boolean shouldShowAutoTmdbMatchDialog(Vod item) {
@@ -2241,7 +2313,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mTmdbFallbackToNative = false;
         mTmdbContentLoaded = false;
         hideTmdbHeader();
-        mBinding.videoShadow.setVisibility(View.GONE);
+        if (mBinding.videoShadow != null) mBinding.videoShadow.setVisibility(View.GONE);
         mBinding.progressLayout.showProgress();
         mTmdbUIAdapter.load(item, mVod);
         Notify.show(R.string.detail_tmdb_match_saved);

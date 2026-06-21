@@ -15,18 +15,24 @@ import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.helper.TmdbMatcher;
 import com.github.catvod.crawler.SpiderDebug;
+import com.github.catvod.utils.Path;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,17 +42,46 @@ import okhttp3.Response;
 
 public class PersonalRecommendationService {
 
-    private static final int MAX_RESULTS = 12;
-    private static final int MAX_TMDB_HISTORY_SEEDS = 4;
-    private static final int MAX_DOUBAN_SEEDS = 8;
+    public static final int DEFAULT_PAGE_SIZE = 12;
+    private static final int TMDB_HISTORY_SEED_BATCH = 4;
+    private static final int MIN_TMDB_HISTORY_RESULTS = 4;
+    private static final int DOUBAN_SEED_BATCH = 8;
+    private static final int MAX_DOUBAN_LOOKUPS_PER_SEED = 1;
+    private static final int DOUBAN_RELATED_COUNT = 10;
+    private static final int MAX_TMDB_SEED_CACHE = 128;
+    private static final long DAY = TimeUnit.DAYS.toMillis(1);
+    private static final long DOUBAN_CACHE_TTL = DAY * 7;
+    private static final long TMDB_SEED_CACHE_TTL = DAY * 7;
     private static final String DOUBAN_SUGGEST_URL = "https://movie.douban.com/j/subject_suggest";
     private static final String DOUBAN_REFERER = "https://movie.douban.com/";
+    private static final String DOUBAN_MOBILE_REFERER = "https://m.douban.com/movie/subject/%s/";
     private static final String DOUBAN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    private static final double SCORE_TMDB_CURRENT_RECOMMENDATION = 120.0;
+    private static final double SCORE_TMDB_CURRENT_SIMILAR = 105.0;
+    private static final double SCORE_TMDB_HISTORY_RECOMMENDATION = 92.0;
+    private static final double SCORE_TMDB_HISTORY_SIMILAR_DELTA = -10.0;
+    private static final double SCORE_TMDB_HISTORY_DECAY = 8.0;
+    private static final double SCORE_TMDB_GENRE_MATCH = 18.0;
+    private static final double SCORE_TMDB_LANGUAGE_MATCH = 10.0;
+    private static final double SCORE_TMDB_COUNTRY_MATCH = 8.0;
+    private static final double SCORE_DOUBAN_CURRENT_RELATED = 110.0;
+    private static final double SCORE_DOUBAN_HISTORY_RELATED = 88.0;
+    private static final double SCORE_DOUBAN_HISTORY_DECAY = 7.0;
+    private static final double SCORE_DOUBAN_SUGGEST_FALLBACK = 45.0;
+    private static final double SCORE_DUPLICATE_SIGNAL_BONUS = 12.0;
+    private static final double SCORE_RATING_WEIGHT = 0.8;
     private static final Pattern YEAR = Pattern.compile("(19\\d{2}|20\\d{2})");
 
     private final TmdbService tmdbService;
     private final TmdbConfig tmdbConfig;
     private final TmdbMatcher tmdbMatcher;
+
+    private static final LinkedHashMap<String, TmdbSeedData> TMDB_SEED_CACHE = new LinkedHashMap<>(32, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, TmdbSeedData> eldest) {
+            return size() > MAX_TMDB_SEED_CACHE;
+        }
+    };
 
     public PersonalRecommendationService() {
         this(new TmdbService(), TmdbConfig.objectFrom(Setting.getTmdbConfig()));
@@ -60,95 +95,249 @@ public class PersonalRecommendationService {
 
     public Recommendations load(@Nullable Vod currentVod, @Nullable TmdbItem currentItem, @Nullable JsonObject currentDetail) {
         if (!Setting.isPersonalRecommendation()) return Recommendations.empty();
-        return new Recommendations(loadTmdb(currentVod, currentItem, currentDetail), loadDouban(currentVod));
+        RecommendationPages pages = loadPage(currentVod, currentItem, currentDetail, 0, DEFAULT_PAGE_SIZE);
+        return new Recommendations(pages.getTmdb().getItems(), pages.getDouban().getItems());
+    }
+
+    public RecommendationPages loadPage(@Nullable Vod currentVod, @Nullable TmdbItem currentItem, @Nullable JsonObject currentDetail, int offset, int pageSize) {
+        if (!Setting.isPersonalRecommendation()) return RecommendationPages.empty();
+        return new RecommendationPages(loadTmdbPage(currentVod, currentItem, currentDetail, offset, pageSize), loadDoubanPage(currentVod, offset, pageSize));
     }
 
     public List<TmdbItem> loadTmdb(@Nullable Vod currentVod, @Nullable TmdbItem currentItem, @Nullable JsonObject currentDetail) {
         if (!Setting.isPersonalRecommendation() || !tmdbConfig.isReady()) return new ArrayList<>();
-        return loadFromTmdb(currentVod, currentItem, currentDetail);
+        return loadFromTmdb(currentVod, currentItem, currentDetail, 0, DEFAULT_PAGE_SIZE).getItems();
+    }
+
+    public RecommendationPage loadTmdbPage(@Nullable Vod currentVod, @Nullable TmdbItem currentItem, @Nullable JsonObject currentDetail, int offset, int pageSize) {
+        if (!Setting.isPersonalRecommendation() || !tmdbConfig.isReady()) return RecommendationPage.empty(historyFingerprint(currentVod, true));
+        return loadFromTmdb(currentVod, currentItem, currentDetail, offset, pageSize);
     }
 
     public List<TmdbItem> loadDouban(@Nullable Vod currentVod) {
         if (!Setting.isPersonalRecommendation()) return new ArrayList<>();
-        return loadFromDouban(currentVod);
+        return loadFromDouban(currentVod, 0, DEFAULT_PAGE_SIZE).getItems();
     }
 
-    private List<TmdbItem> loadFromTmdb(@Nullable Vod currentVod, @Nullable TmdbItem currentItem, @Nullable JsonObject currentDetail) {
-        LinkedHashMap<String, TmdbItem> results = new LinkedHashMap<>();
+    public RecommendationPage loadDoubanPage(@Nullable Vod currentVod, int offset, int pageSize) {
+        if (!Setting.isPersonalRecommendation()) return RecommendationPage.empty(historyFingerprint(currentVod, false));
+        return loadFromDouban(currentVod, offset, pageSize);
+    }
+
+    public String historyFingerprint(@Nullable Vod currentVod, boolean tmdbTarget) {
+        return historySeedFingerprint(historySeeds(currentTitle(currentVod, null), Integer.MAX_VALUE, tmdbTarget));
+    }
+
+    private RecommendationPage loadFromTmdb(@Nullable Vod currentVod, @Nullable TmdbItem currentItem, @Nullable JsonObject currentDetail, int offset, int pageSize) {
+        int pageOffset = Math.max(0, offset);
+        int limit = safePageSize(pageSize);
+        int requested = pageOffset + limit + 1;
+        List<RecommendationCandidate> currentCandidates = new ArrayList<>();
         Set<String> blockedTitles = blockedTitles(currentVod);
         String currentTitle = currentTitle(currentVod, currentItem);
         if (!isBlank(currentTitle)) blockedTitles.add(normalizeTitle(currentTitle));
+        List<String> historySeeds = historySeeds(currentTitle, Integer.MAX_VALUE, true);
+        String fingerprint = historySeedFingerprint(historySeeds);
 
-        int seedCount = 0;
-        for (String seed : historySeeds(currentTitle, MAX_TMDB_HISTORY_SEEDS, true)) {
+        TmdbItem anchorItem = currentItem;
+        JsonObject anchorDetail = currentDetail;
+        if (anchorDetail == null && anchorItem == null && !isBlank(currentTitle)) {
             try {
-                TmdbItem seedItem = tmdbMatcher.searchAndMatch(seed);
-                if (seedItem == null) continue;
-                JsonObject detail = tmdbService.detail(seedItem, tmdbConfig);
-                addTmdbItems(results, blockedTitles, tmdbService.recommendations(detail, tmdbConfig), currentItem);
-                addTmdbItems(results, blockedTitles, tmdbService.similar(detail, tmdbConfig), currentItem);
-                seedCount++;
-                if (results.size() >= MAX_RESULTS || seedCount >= MAX_TMDB_HISTORY_SEEDS) break;
+                anchorItem = tmdbMatcher.searchAndMatch(currentTitle, currentVod);
+                if (anchorItem != null) anchorDetail = tmdbService.detail(anchorItem, tmdbConfig);
+            } catch (Throwable e) {
+                SpiderDebug.log("personal-rec", "TMDB current match failed title=%s error=%s", currentTitle, e.getMessage());
+            }
+        }
+        if (anchorItem != null && !isBlank(anchorItem.getTitle())) blockedTitles.add(normalizeTitle(anchorItem.getTitle()));
+        TmdbContext context = TmdbContext.from(anchorDetail);
+
+        if (anchorDetail != null) {
+            addTmdbCandidates(currentCandidates, blockedTitles, tmdbService.recommendations(anchorDetail, tmdbConfig), anchorItem, SCORE_TMDB_CURRENT_RECOMMENDATION, context);
+            addTmdbCandidates(currentCandidates, blockedTitles, tmdbService.similar(anchorDetail, tmdbConfig), anchorItem, SCORE_TMDB_CURRENT_SIMILAR, context);
+        }
+
+        int seedLimit = seedLimitForOffset(historySeeds.size(), pageOffset, limit, TMDB_HISTORY_SEED_BATCH);
+        List<RecommendationCandidate> ranked;
+        List<RecommendationCandidate> historyCandidates;
+        do {
+            historyCandidates = tmdbHistoryCandidates(historySeeds, seedLimit, blockedTitles, anchorItem, context);
+            ranked = mergeTmdbPersonalCandidates(currentCandidates, historyCandidates, requested, pageOffset == 0 ? MIN_TMDB_HISTORY_RESULTS : 0);
+            if (ranked.size() > pageOffset || seedLimit >= historySeeds.size()) break;
+            seedLimit = Math.min(historySeeds.size(), seedLimit + TMDB_HISTORY_SEED_BATCH);
+        } while (true);
+
+        RecommendationPage page = pageItems(ranked, pageOffset, limit, fingerprint, seedLimit < historySeeds.size());
+        SpiderDebug.log("personal-rec", "TMDB candidates current=%d history=%d offset=%d result=%d more=%s title=%s", currentCandidates.size(), historyCandidates.size(), pageOffset, page.getItems().size(), page.hasMore(), currentTitle);
+        return page;
+    }
+
+    private RecommendationPage loadFromDouban(@Nullable Vod currentVod, int offset, int pageSize) {
+        int pageOffset = Math.max(0, offset);
+        int limit = safePageSize(pageSize);
+        int requested = pageOffset + limit + 1;
+        String currentTitle = currentTitle(currentVod, null);
+        Set<String> sourceTitles = blockedTitles(currentVod);
+        if (!isBlank(currentTitle)) sourceTitles.add(normalizeTitle(currentTitle));
+        List<String> seeds = doubanSeeds(currentTitle, Integer.MAX_VALUE);
+        String fingerprint = historySeedFingerprint(seeds);
+
+        int seedLimit = seedLimitForOffset(seeds.size(), pageOffset, limit, DOUBAN_SEED_BATCH);
+        List<RecommendationCandidate> ranked;
+        do {
+            ranked = doubanRankedCandidates(seeds, seedLimit, sourceTitles, currentTitle, requested);
+            if (ranked.size() > pageOffset || seedLimit >= seeds.size()) break;
+            seedLimit = Math.min(seeds.size(), seedLimit + DOUBAN_SEED_BATCH);
+        } while (true);
+
+        return pageItems(ranked, pageOffset, limit, fingerprint, seedLimit < seeds.size());
+    }
+
+    private void addTmdbCandidates(List<RecommendationCandidate> candidates, Set<String> blockedTitles, List<TmdbItem> items, TmdbItem currentItem, double baseScore, TmdbContext context) {
+        if (items == null) return;
+        for (TmdbItem item : items) {
+            if (item == null || isBlank(item.getTitle())) continue;
+            if (sameTmdbItem(item, currentItem)) continue;
+            String normalizedTitle = normalizeTitle(item.getTitle());
+            if (blockedTitles.contains(normalizedTitle)) continue;
+            candidates.add(new RecommendationCandidate(item, tmdbKey(item), normalizedTitle, baseScore + ratingBonus(item.getRating()) + contextBonus(item, context), candidates.size()));
+        }
+    }
+
+    private void addDoubanCandidates(List<RecommendationCandidate> candidates, Set<String> blockedTitles, List<DoubanSubject> subjects, double baseScore) {
+        if (subjects == null) return;
+        for (DoubanSubject subject : subjects) {
+            if (subject == null || isBlank(subject.title)) continue;
+            String normalizedTitle = normalizeTitle(subject.title);
+            if (isBlank(normalizedTitle) || blockedTitles.contains(normalizedTitle)) continue;
+            candidates.add(new RecommendationCandidate(subject.toTmdbItem(), doubanKey(subject), normalizedTitle, baseScore + ratingBonus(subject.rating), candidates.size()));
+        }
+    }
+
+    private List<RecommendationCandidate> tmdbHistoryCandidates(List<String> seeds, int seedLimit, Set<String> blockedTitles, TmdbItem anchorItem, TmdbContext context) {
+        List<RecommendationCandidate> candidates = new ArrayList<>();
+        int seedIndex = 0;
+        for (int i = 0; i < Math.min(seedLimit, seeds.size()); i++) {
+            String seed = seeds.get(i);
+            try {
+                TmdbSeedData data = tmdbSeedData(seed);
+                if (data == null || data.seedItem == null) continue;
+                double seedScore = SCORE_TMDB_HISTORY_RECOMMENDATION - seedIndex * SCORE_TMDB_HISTORY_DECAY;
+                addTmdbCandidates(candidates, blockedTitles, data.recommendations, anchorItem, seedScore, context);
+                addTmdbCandidates(candidates, blockedTitles, data.similar, anchorItem, seedScore + SCORE_TMDB_HISTORY_SIMILAR_DELTA, context);
+                seedIndex++;
             } catch (Throwable e) {
                 SpiderDebug.log("personal-rec", "TMDB seed failed title=%s error=%s", seed, e.getMessage());
             }
         }
-
-        if (currentDetail != null && results.size() < MAX_RESULTS) {
-            addTmdbItems(results, blockedTitles, tmdbService.recommendations(currentDetail, tmdbConfig), currentItem);
-            addTmdbItems(results, blockedTitles, tmdbService.similar(currentDetail, tmdbConfig), currentItem);
-        }
-
-        return new ArrayList<>(results.values());
+        return candidates;
     }
 
-    private List<TmdbItem> loadFromDouban(@Nullable Vod currentVod) {
-        LinkedHashMap<String, TmdbItem> results = new LinkedHashMap<>();
-        String currentTitle = currentTitle(currentVod, null);
-        Set<String> sourceTitles = blockedTitles(currentVod);
-        if (!isBlank(currentTitle)) sourceTitles.add(normalizeTitle(currentTitle));
+    private TmdbSeedData tmdbSeedData(String seed) throws Exception {
+        String key = tmdbSeedCacheKey(seed);
+        TmdbSeedData cached = readTmdbSeedCache(key);
+        if (cached != null) return cached;
+        TmdbItem seedItem = tmdbMatcher.searchAndMatch(seed);
+        if (seedItem == null) return null;
+        JsonObject detail = tmdbService.detail(seedItem, tmdbConfig);
+        TmdbSeedData data = new TmdbSeedData(seedItem, tmdbService.recommendations(detail, tmdbConfig), tmdbService.similar(detail, tmdbConfig), System.currentTimeMillis());
+        writeTmdbSeedCache(key, data);
+        return data;
+    }
 
-        for (String seed : doubanSeeds(currentTitle)) {
-            for (DoubanSubject subject : fetchDoubanSuggest(seed)) {
-                String normalized = normalizeTitle(subject.title);
-                if (isBlank(normalized) || sourceTitles.contains(normalized)) continue;
-                results.putIfAbsent(doubanKey(subject), subject.toTmdbItem());
-                if (results.size() >= MAX_RESULTS) return new ArrayList<>(results.values());
+    private String tmdbSeedCacheKey(String seed) {
+        return Objects.toString(tmdbConfig.getApiBase(), "") + "|" + Objects.toString(tmdbConfig.getLanguage(), "") + "|" + normalizeTitle(seed);
+    }
+
+    private TmdbSeedData readTmdbSeedCache(String key) {
+        synchronized (TMDB_SEED_CACHE) {
+            TmdbSeedData data = TMDB_SEED_CACHE.get(key);
+            if (data == null) return null;
+            if (System.currentTimeMillis() - data.time > TMDB_SEED_CACHE_TTL) {
+                TMDB_SEED_CACHE.remove(key);
+                return null;
+            }
+            return data;
+        }
+    }
+
+    private void writeTmdbSeedCache(String key, TmdbSeedData data) {
+        if (isBlank(key) || data == null) return;
+        synchronized (TMDB_SEED_CACHE) {
+            TMDB_SEED_CACHE.put(key, data);
+        }
+    }
+
+    private List<RecommendationCandidate> doubanRankedCandidates(List<String> seeds, int seedLimit, Set<String> sourceTitles, String currentTitle, int maxResults) {
+        List<RecommendationCandidate> relatedCandidates = new ArrayList<>();
+        List<RecommendationCandidate> fallbackCandidates = new ArrayList<>();
+        int seedIndex = 0;
+        int historySeedIndex = 0;
+        Set<String> lookedUpSubjects = new HashSet<>();
+        for (int i = 0; i < Math.min(seedLimit, seeds.size()); i++) {
+            String seed = seeds.get(i);
+            List<DoubanSubject> suggestions = fetchDoubanSuggest(seed);
+            boolean currentSeed = !isBlank(currentTitle) && normalizeTitle(seed).equals(normalizeTitle(currentTitle));
+            double relatedScore = currentSeed ? SCORE_DOUBAN_CURRENT_RELATED : SCORE_DOUBAN_HISTORY_RELATED - historySeedIndex * SCORE_DOUBAN_HISTORY_DECAY;
+            addDoubanCandidates(fallbackCandidates, sourceTitles, suggestions, SCORE_DOUBAN_SUGGEST_FALLBACK - seedIndex);
+
+            int lookupCount = 0;
+            for (DoubanSubject subject : suggestions) {
+                if (isBlank(subject.id)) continue;
+                if (!lookedUpSubjects.add(doubanKey(subject))) continue;
+                addDoubanCandidates(relatedCandidates, sourceTitles, fetchDoubanRelated(subject), relatedScore);
+                lookupCount++;
+                if (lookupCount >= MAX_DOUBAN_LOOKUPS_PER_SEED) break;
+            }
+            if (!currentSeed) historySeedIndex++;
+            seedIndex++;
+        }
+        return rankCandidates(relatedCandidates.isEmpty() ? fallbackCandidates : relatedCandidates, maxResults);
+    }
+
+    static RecommendationPage pageItems(List<RecommendationCandidate> ranked, int offset, int pageSize, String historyFingerprint, boolean hasMoreSeeds) {
+        int start = Math.max(0, offset);
+        int limit = safePageSize(pageSize);
+        int end = Math.min(ranked == null ? 0 : ranked.size(), start + limit);
+        List<TmdbItem> items = new ArrayList<>();
+        if (ranked != null) {
+            for (int i = start; i < end; i++) {
+                RecommendationCandidate candidate = ranked.get(i);
+                if (candidate != null && candidate.item != null) items.add(candidate.item);
             }
         }
-
-        // Douban suggest is search-oriented. If it does not return adjacent titles,
-        // fall back to recent watched titles enriched with posters instead of showing nothing.
-        if (results.isEmpty()) {
-        for (String seed : historySeeds(currentTitle, MAX_DOUBAN_SEEDS, false)) {
-                for (DoubanSubject subject : fetchDoubanSuggest(seed)) {
-                    if (isBlank(subject.title) || normalizeTitle(subject.title).equals(normalizeTitle(currentTitle))) continue;
-                    results.putIfAbsent(doubanKey(subject), subject.toTmdbItem());
-                    break;
-                }
-                if (results.size() >= MAX_RESULTS) break;
-            }
-        }
-
-        return new ArrayList<>(results.values());
+        int nextOffset = start + items.size();
+        boolean hasMore = (ranked != null && ranked.size() > end) || hasMoreSeeds;
+        return new RecommendationPage(items, start, nextOffset, hasMore, historyFingerprint);
     }
 
-    private void addTmdbItems(LinkedHashMap<String, TmdbItem> results, Set<String> blockedTitles, List<TmdbItem> items, TmdbItem currentItem) {
-        if (items == null || results.size() >= MAX_RESULTS) return;
-        for (TmdbItem item : items) {
-            if (item == null || isBlank(item.getTitle())) continue;
-            if (sameTmdbItem(item, currentItem)) continue;
-            if (blockedTitles.contains(normalizeTitle(item.getTitle()))) continue;
-            results.putIfAbsent(tmdbKey(item), item);
-            if (results.size() >= MAX_RESULTS) return;
-        }
+    private static int seedLimitForOffset(int totalSeeds, int offset, int pageSize, int batchSize) {
+        if (totalSeeds <= 0) return 0;
+        int batch = Math.max(1, batchSize);
+        int page = Math.max(0, offset) / safePageSize(pageSize);
+        return Math.min(totalSeeds, Math.max(batch, (page + 1) * batch));
     }
 
-    private List<String> doubanSeeds(String currentTitle) {
+    private static int safePageSize(int pageSize) {
+        return pageSize <= 0 ? DEFAULT_PAGE_SIZE : pageSize;
+    }
+
+    private List<String> doubanSeeds(String currentTitle, int maxSeeds) {
         List<String> seeds = new ArrayList<>();
-        addSeed(seeds, currentTitle, MAX_DOUBAN_SEEDS);
-        for (String seed : historySeeds(currentTitle, MAX_DOUBAN_SEEDS, false)) addSeed(seeds, seed, MAX_DOUBAN_SEEDS);
+        addSeed(seeds, currentTitle, maxSeeds);
+        for (String seed : historySeeds(currentTitle, maxSeeds, false)) addSeed(seeds, seed, maxSeeds);
         return seeds;
+    }
+
+    static String historySeedFingerprint(List<String> seeds) {
+        if (seeds == null || seeds.isEmpty()) return "";
+        List<String> normalized = new ArrayList<>();
+        for (String seed : seeds) {
+            String value = normalizeTitle(seed);
+            if (isBlank(value) || normalized.contains(value)) continue;
+            normalized.add(value);
+        }
+        return String.join("|", normalized);
     }
 
     private List<String> historySeeds(String currentTitle, int maxSeeds, boolean tmdbTarget) {
@@ -246,17 +435,59 @@ public class PersonalRecommendationService {
         HttpUrl base = HttpUrl.parse(DOUBAN_SUGGEST_URL);
         if (base == null) return new ArrayList<>();
         HttpUrl url = base.newBuilder().addQueryParameter("q", keyword).build();
+        String body = requestDouban(url, DOUBAN_REFERER, "suggest");
+        return parseDoubanSubjects(body);
+    }
+
+    private List<DoubanSubject> fetchDoubanRelated(DoubanSubject subject) {
+        if (subject == null || isBlank(subject.id)) return new ArrayList<>();
+        List<DoubanSubject> subjects = fetchDoubanRelated("movie", subject.id);
+        if (!subjects.isEmpty()) return subjects;
+        return fetchDoubanRelated("tv", subject.id);
+    }
+
+    private List<DoubanSubject> fetchDoubanRelated(String mediaType, String doubanId) {
+        if (isBlank(doubanId)) return new ArrayList<>();
+        String type = "tv".equals(mediaType) ? "tv" : "movie";
+        HttpUrl url = new HttpUrl.Builder()
+                .scheme("https")
+                .host("m.douban.com")
+                .addPathSegment("rexxar")
+                .addPathSegment("api")
+                .addPathSegment("v2")
+                .addPathSegment(type)
+                .addPathSegment(doubanId)
+                .addPathSegment("related_items")
+                .addQueryParameter("start", "0")
+                .addQueryParameter("count", String.valueOf(DOUBAN_RELATED_COUNT))
+                .build();
+        String body = requestDouban(url, String.format(Locale.ROOT, DOUBAN_MOBILE_REFERER, doubanId), "related");
+        return parseDoubanRelatedSubjects(body);
+    }
+
+    private String requestDouban(HttpUrl url, String referer, String cacheType) {
+        if (url == null) return "";
+        File file = doubanCacheFile(cacheType, url.toString());
+        String cached = readDoubanCache(file, DOUBAN_CACHE_TTL);
+        if (!isBlank(cached)) return cached;
         Request request = new Request.Builder()
                 .url(url)
                 .header("User-Agent", DOUBAN_UA)
-                .header("Referer", DOUBAN_REFERER)
+                .header("Referer", isBlank(referer) ? DOUBAN_REFERER : referer)
+                .header("Accept", "application/json, text/plain, */*")
                 .build();
         try (Response response = com.github.catvod.net.OkHttp.client().newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) return new ArrayList<>();
-            return parseDoubanSubjects(response.body().string());
+            if (!response.isSuccessful() || response.body() == null) {
+                String stale = readDoubanCache(file, Long.MAX_VALUE);
+                return stale == null ? "" : stale;
+            }
+            String body = response.body().string();
+            if (looksLikeJson(body)) writeDoubanCache(file, body);
+            return body;
         } catch (Throwable e) {
-            SpiderDebug.log("personal-rec", "Douban suggest failed title=%s error=%s", keyword, e.getMessage());
-            return new ArrayList<>();
+            SpiderDebug.log("personal-rec", "Douban request failed url=%s error=%s", url, e.getMessage());
+            String stale = readDoubanCache(file, Long.MAX_VALUE);
+            return stale == null ? "" : stale;
         }
     }
 
@@ -276,6 +507,164 @@ public class PersonalRecommendationService {
             return new ArrayList<>();
         }
         return subjects;
+    }
+
+    static List<DoubanSubject> parseDoubanRelatedSubjects(String body) {
+        List<DoubanSubject> subjects = new ArrayList<>();
+        if (isBlank(body)) return subjects;
+        try {
+            JsonElement element = JsonParser.parseString(body);
+            if (element == null || !element.isJsonObject()) return subjects;
+            JsonObject object = element.getAsJsonObject();
+            JsonArray array = object.has("subjects") && object.get("subjects").isJsonArray()
+                    ? object.getAsJsonArray("subjects")
+                    : object.has("items") && object.get("items").isJsonArray() ? object.getAsJsonArray("items") : new JsonArray();
+            for (JsonElement item : array) {
+                if (!item.isJsonObject()) continue;
+                DoubanSubject subject = DoubanSubject.from(item.getAsJsonObject());
+                if (subject != null) subjects.add(subject);
+            }
+        } catch (Throwable ignored) {
+            return new ArrayList<>();
+        }
+        return subjects;
+    }
+
+    private File doubanCacheFile(String type, String key) {
+        try {
+            File dir = new File(Path.cache(), "douban_rec");
+            if (!dir.exists()) dir.mkdirs();
+            return new File(dir, type + "_" + md5(key) + ".json");
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private String readDoubanCache(File file, long ttl) {
+        try {
+            if (file == null || !file.exists() || file.length() <= 0) return null;
+            if (ttl != Long.MAX_VALUE && System.currentTimeMillis() - file.lastModified() > ttl) return null;
+            return Path.read(file);
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private void writeDoubanCache(File file, String body) {
+        try {
+            if (file == null || isBlank(body)) return;
+            Path.write(file, body.getBytes(StandardCharsets.UTF_8));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private boolean looksLikeJson(String body) {
+        String value = Objects.toString(body, "").trim();
+        return value.startsWith("{") || value.startsWith("[");
+    }
+
+    public static List<TmdbItem> rankTmdbItemsForContext(@Nullable JsonObject detail, List<TmdbItem> recommendations, List<TmdbItem> similar, int maxResults) {
+        if (maxResults <= 0) return new ArrayList<>();
+        TmdbContext context = TmdbContext.from(detail);
+        List<RecommendationCandidate> candidates = new ArrayList<>();
+        addTmdbRankingCandidates(candidates, recommendations, SCORE_TMDB_CURRENT_RECOMMENDATION, context);
+        addTmdbRankingCandidates(candidates, similar, SCORE_TMDB_CURRENT_SIMILAR, context);
+        List<TmdbItem> items = new ArrayList<>();
+        for (RecommendationCandidate candidate : rankCandidates(candidates, maxResults)) {
+            if (candidate.item != null) items.add(candidate.item);
+        }
+        return items;
+    }
+
+    private static void addTmdbRankingCandidates(List<RecommendationCandidate> candidates, List<TmdbItem> items, double baseScore, TmdbContext context) {
+        if (items == null) return;
+        for (TmdbItem item : items) {
+            if (item == null || isBlank(item.getTitle())) continue;
+            String normalizedTitle = normalizeTitle(item.getTitle());
+            candidates.add(new RecommendationCandidate(item, tmdbKey(item), normalizedTitle, baseScore + ratingBonus(item.getRating()) + contextBonus(item, context), candidates.size()));
+        }
+    }
+
+    static List<RecommendationCandidate> mergeTmdbPersonalCandidates(List<RecommendationCandidate> currentCandidates, List<RecommendationCandidate> historyCandidates, int maxResults, int minHistoryResults) {
+        if (maxResults <= 0) return new ArrayList<>();
+        List<RecommendationCandidate> history = rankCandidates(historyCandidates, maxResults);
+        if (!history.isEmpty()) {
+            List<RecommendationCandidate> selected = new ArrayList<>(history.subList(0, Math.min(maxResults, history.size())));
+            if (selected.size() < maxResults) {
+                for (RecommendationCandidate candidate : rankCandidates(currentCandidates, maxResults)) {
+                    if (containsCandidateKey(selected, candidate.key)) continue;
+                    selected.add(candidate);
+                    if (selected.size() >= maxResults) break;
+                }
+            }
+            return selected;
+        }
+        List<RecommendationCandidate> current = rankCandidates(currentCandidates, maxResults);
+        List<RecommendationCandidate> mergedInput = new ArrayList<>();
+        mergedInput.addAll(current);
+        List<RecommendationCandidate> selected = rankCandidates(mergedInput, maxResults);
+        return selected;
+    }
+
+    private static boolean containsCandidateKey(List<RecommendationCandidate> candidates, String key) {
+        if (isBlank(key)) return false;
+        for (RecommendationCandidate candidate : candidates) {
+            if (candidate != null && key.equals(candidate.key)) return true;
+        }
+        return false;
+    }
+
+    private String md5(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            byte[] bytes = digest.digest(Objects.toString(text, "").getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (byte value : bytes) builder.append(String.format(Locale.US, "%02x", value));
+            return builder.toString();
+        } catch (Throwable e) {
+            return Integer.toHexString(Objects.toString(text, "").hashCode());
+        }
+    }
+
+    static List<RecommendationCandidate> rankCandidates(List<RecommendationCandidate> candidates, int maxResults) {
+        if (candidates == null || maxResults <= 0) return new ArrayList<>();
+        LinkedHashMap<String, RecommendationCandidate> merged = new LinkedHashMap<>();
+        for (RecommendationCandidate candidate : candidates) {
+            if (candidate == null || isBlank(candidate.key) || isBlank(candidate.normalizedTitle)) continue;
+            RecommendationCandidate existing = merged.get(candidate.key);
+            if (existing == null) {
+                merged.put(candidate.key, new RecommendationCandidate(candidate.item, candidate.key, candidate.normalizedTitle, candidate.score, candidate.order));
+            } else {
+                if (candidate.item != null && candidate.score > existing.score) existing.item = candidate.item;
+                existing.score = Math.max(existing.score, candidate.score) + SCORE_DUPLICATE_SIGNAL_BONUS;
+            }
+        }
+        List<RecommendationCandidate> ranked = new ArrayList<>(merged.values());
+        ranked.sort(Comparator
+                .comparingDouble((RecommendationCandidate candidate) -> candidate.score).reversed()
+                .thenComparingInt(candidate -> candidate.order));
+        return ranked.size() > maxResults ? new ArrayList<>(ranked.subList(0, maxResults)) : ranked;
+    }
+
+    private static double ratingBonus(double rating) {
+        if (rating <= 0) return 0.0;
+        return Math.min(rating, 10.0) * SCORE_RATING_WEIGHT;
+    }
+
+    private static double contextBonus(TmdbItem item, TmdbContext context) {
+        if (item == null || context == null || context.isEmpty()) return 0.0;
+        double score = 0.0;
+        for (Integer genreId : item.getGenreIds()) {
+            if (genreId != null && context.genreIds.contains(genreId)) score += SCORE_TMDB_GENRE_MATCH;
+        }
+        if (!isBlank(item.getOriginalLanguage()) && item.getOriginalLanguage().equalsIgnoreCase(context.originalLanguage)) {
+            score += SCORE_TMDB_LANGUAGE_MATCH;
+        }
+        String country = item.getOriginCountry();
+        if (!isBlank(country) && context.originCountries.contains(country.toUpperCase(Locale.ROOT))) {
+            score += SCORE_TMDB_COUNTRY_MATCH;
+        }
+        return score;
     }
 
     private static String currentTitle(Vod currentVod, TmdbItem currentItem) {
@@ -321,6 +710,164 @@ public class PersonalRecommendationService {
         }
     }
 
+    static final class TmdbContext {
+
+        final Set<Integer> genreIds;
+        final String originalLanguage;
+        final Set<String> originCountries;
+
+        private TmdbContext(Set<Integer> genreIds, String originalLanguage, Set<String> originCountries) {
+            this.genreIds = genreIds == null ? new HashSet<>() : genreIds;
+            this.originalLanguage = originalLanguage == null ? "" : originalLanguage.trim();
+            this.originCountries = originCountries == null ? new HashSet<>() : originCountries;
+        }
+
+        static TmdbContext from(JsonObject detail) {
+            Set<Integer> genreIds = new HashSet<>();
+            Set<String> countries = new HashSet<>();
+            if (detail != null) {
+                JsonArray genres = array(detail, "genres");
+                for (JsonElement element : genres) {
+                    if (!element.isJsonObject()) continue;
+                    JsonObject object = element.getAsJsonObject();
+                    if (object.has("id") && !object.get("id").isJsonNull()) {
+                        try {
+                            genreIds.add(object.get("id").getAsInt());
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+                for (JsonElement element : array(detail, "origin_country")) addCountry(countries, element);
+                for (JsonElement element : array(detail, "production_countries")) {
+                    if (!element.isJsonObject()) continue;
+                    addCountry(countries, element.getAsJsonObject().get("iso_3166_1"));
+                }
+            }
+            return new TmdbContext(genreIds, string(detail, "original_language"), countries);
+        }
+
+        boolean isEmpty() {
+            return genreIds.isEmpty() && isBlank(originalLanguage) && originCountries.isEmpty();
+        }
+
+        private static JsonArray array(JsonObject object, String key) {
+            if (object == null || !object.has(key) || object.get(key).isJsonNull() || !object.get(key).isJsonArray()) return new JsonArray();
+            return object.getAsJsonArray(key);
+        }
+
+        private static String string(JsonObject object, String key) {
+            if (object == null || !object.has(key) || object.get(key).isJsonNull() || !object.get(key).isJsonPrimitive()) return "";
+            String value = object.get(key).getAsString();
+            return value == null ? "" : value.trim();
+        }
+
+        private static void addCountry(Set<String> countries, JsonElement element) {
+            if (element == null || element.isJsonNull() || !element.isJsonPrimitive()) return;
+            String value = element.getAsString();
+            if (!isBlank(value)) countries.add(value.trim().toUpperCase(Locale.ROOT));
+        }
+    }
+
+    static final class RecommendationCandidate {
+
+        TmdbItem item;
+        final String key;
+        final String normalizedTitle;
+        double score;
+        final int order;
+
+        RecommendationCandidate(TmdbItem item, String key, String normalizedTitle, double score, int order) {
+            this.item = item;
+            this.key = nullToEmpty(key);
+            this.normalizedTitle = nullToEmpty(normalizedTitle);
+            this.score = score;
+            this.order = order;
+        }
+
+        private static String nullToEmpty(String value) {
+            return value == null ? "" : value.trim();
+        }
+    }
+
+    private static final class TmdbSeedData {
+
+        private final TmdbItem seedItem;
+        private final List<TmdbItem> recommendations;
+        private final List<TmdbItem> similar;
+        private final long time;
+
+        private TmdbSeedData(TmdbItem seedItem, List<TmdbItem> recommendations, List<TmdbItem> similar, long time) {
+            this.seedItem = seedItem;
+            this.recommendations = recommendations == null ? new ArrayList<>() : new ArrayList<>(recommendations);
+            this.similar = similar == null ? new ArrayList<>() : new ArrayList<>(similar);
+            this.time = time;
+        }
+    }
+
+    public static final class RecommendationPage {
+
+        private final List<TmdbItem> items;
+        private final int offset;
+        private final int nextOffset;
+        private final boolean hasMore;
+        private final String historyFingerprint;
+
+        RecommendationPage(List<TmdbItem> items, int offset, int nextOffset, boolean hasMore, String historyFingerprint) {
+            this.items = items == null ? new ArrayList<>() : new ArrayList<>(items);
+            this.offset = Math.max(0, offset);
+            this.nextOffset = Math.max(this.offset, nextOffset);
+            this.hasMore = hasMore;
+            this.historyFingerprint = historyFingerprint == null ? "" : historyFingerprint;
+        }
+
+        public static RecommendationPage empty(String historyFingerprint) {
+            return new RecommendationPage(new ArrayList<>(), 0, 0, false, historyFingerprint);
+        }
+
+        public List<TmdbItem> getItems() {
+            return new ArrayList<>(items);
+        }
+
+        public int getOffset() {
+            return offset;
+        }
+
+        public int getNextOffset() {
+            return nextOffset;
+        }
+
+        public boolean hasMore() {
+            return hasMore;
+        }
+
+        public String getHistoryFingerprint() {
+            return historyFingerprint;
+        }
+    }
+
+    public static final class RecommendationPages {
+
+        private final RecommendationPage tmdb;
+        private final RecommendationPage douban;
+
+        RecommendationPages(RecommendationPage tmdb, RecommendationPage douban) {
+            this.tmdb = tmdb == null ? RecommendationPage.empty("") : tmdb;
+            this.douban = douban == null ? RecommendationPage.empty("") : douban;
+        }
+
+        public static RecommendationPages empty() {
+            return new RecommendationPages(RecommendationPage.empty(""), RecommendationPage.empty(""));
+        }
+
+        public RecommendationPage getTmdb() {
+            return tmdb;
+        }
+
+        public RecommendationPage getDouban() {
+            return douban;
+        }
+    }
+
     public static final class Recommendations {
 
         private final List<TmdbItem> tmdb;
@@ -355,26 +902,28 @@ public class PersonalRecommendationService {
         final String mediaType;
         final int year;
         final String posterUrl;
+        final double rating;
 
-        private DoubanSubject(String id, String title, String mediaType, int year, String posterUrl) {
+        private DoubanSubject(String id, String title, String mediaType, int year, String posterUrl, double rating) {
             this.id = nullToEmpty(id);
             this.title = nullToEmpty(title);
             this.mediaType = nullToEmpty(mediaType);
             this.year = year;
             this.posterUrl = nullToEmpty(posterUrl);
+            this.rating = rating;
         }
 
         static DoubanSubject from(@NonNull JsonObject object) {
             String title = string(object, "title", "name");
             if (isBlank(title)) return null;
             String type = mediaType(string(object, "type"));
-            int year = firstYear(string(object, "year", "sub_title"));
-            String poster = highResPoster(string(object, "img"));
-            return new DoubanSubject(string(object, "id"), title, type, year, poster);
+            int year = firstYear(string(object, "year", "sub_title", "card_subtitle"));
+            String poster = highResPoster(poster(object));
+            return new DoubanSubject(string(object, "id"), title, type, year, poster, rating(object));
         }
 
         TmdbItem toTmdbItem() {
-            return new TmdbItem(doubanIntId(), mediaType, title, subtitle(), "", posterUrl, "", "", 0.0);
+            return new TmdbItem(doubanIntId(), mediaType, title, subtitle(), "", posterUrl, "", "", rating);
         }
 
         private int doubanIntId() {
@@ -392,6 +941,7 @@ public class PersonalRecommendationService {
             List<String> parts = new ArrayList<>();
             parts.add("tv".equals(mediaType) ? "剧集" : "电影");
             if (year > 0) parts.add(String.valueOf(year));
+            if (rating > 0) parts.add(String.format(Locale.US, "评分 %.1f", rating));
             return String.join(" · ", parts);
         }
 
@@ -412,13 +962,45 @@ public class PersonalRecommendationService {
             return value;
         }
 
+        private static String poster(JsonObject object) {
+            String poster = string(object, "img", "cover_url", "cover");
+            if (!isBlank(poster)) return poster;
+            JsonObject pic = jsonObject(object, "pic");
+            if (pic != null) return string(pic, "large", "normal", "url");
+            return "";
+        }
+
+        private static double rating(JsonObject object) {
+            double value = number(object, "rating", "rate");
+            if (value > 0) return value;
+            JsonObject rating = jsonObject(object, "rating");
+            return rating == null ? 0.0 : number(rating, "value", "average", "rating");
+        }
+
         private static String string(JsonObject object, String... keys) {
             for (String key : keys) {
-                if (object == null || !object.has(key) || object.get(key).isJsonNull()) continue;
+                if (object == null || !object.has(key) || object.get(key).isJsonNull() || !object.get(key).isJsonPrimitive()) continue;
                 String value = object.get(key).getAsString();
                 if (!isBlank(value)) return value.trim();
             }
             return "";
+        }
+
+        private static double number(JsonObject object, String... keys) {
+            for (String key : keys) {
+                if (object == null || !object.has(key) || object.get(key).isJsonNull() || !object.get(key).isJsonPrimitive()) continue;
+                try {
+                    String value = object.get(key).getAsString();
+                    if (!isBlank(value)) return Double.parseDouble(value);
+                } catch (Throwable ignored) {
+                }
+            }
+            return 0.0;
+        }
+
+        private static JsonObject jsonObject(JsonObject object, String key) {
+            if (object == null || !object.has(key) || object.get(key).isJsonNull() || !object.get(key).isJsonObject()) return null;
+            return object.getAsJsonObject(key);
         }
 
         private static String nullToEmpty(String value) {

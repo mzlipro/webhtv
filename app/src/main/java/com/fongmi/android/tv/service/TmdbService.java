@@ -71,10 +71,11 @@ public class TmdbService {
             String date = "movie".equals(mediaType) ? string(object, "release_date") : string(object, "first_air_date");
             String language = string(object, "original_language");
             String country = firstString(array(object, "origin_country"));
+            List<Integer> genreIds = integers(array(object, "genre_ids"));
             double voteAverage = object.has("vote_average") && !object.get("vote_average").isJsonNull() ? object.get("vote_average").getAsDouble() : 0.0;
             String vote = voteAverage > 0 ? String.format(Locale.US, "%.1f", voteAverage) : "";
             String subtitle = buildSubtitle(mediaType, date, vote);
-            items.add(new TmdbItem(object.get("id").getAsInt(), mediaType, title, subtitle, string(object, "overview"), image(config.getImageBase(), posterPath), image(config.getBackdropBase(), backdropPath), "", voteAverage, language, country));
+            items.add(new TmdbItem(object.get("id").getAsInt(), mediaType, title, subtitle, string(object, "overview"), image(config.getImageBase(), posterPath), image(config.getBackdropBase(), backdropPath), "", voteAverage, language, country, genreIds));
         }
         return items;
     }
@@ -377,6 +378,26 @@ public class TmdbService {
         return items(array(detail, "similar", "results"), config, inferMediaType(detail));
     }
 
+    public List<TmdbItem> recommendations(@NonNull TmdbItem item, @NonNull TmdbConfig config, int page) throws Exception {
+        return relatedPage(item, config, "recommendations", page);
+    }
+
+    public List<TmdbItem> similar(@NonNull TmdbItem item, @NonNull TmdbConfig config, int page) throws Exception {
+        return relatedPage(item, config, "similar", page);
+    }
+
+    private List<TmdbItem> relatedPage(@NonNull TmdbItem item, @NonNull TmdbConfig config, String type, int page) throws Exception {
+        ensureReady(config);
+        String mediaType = normalizeMediaType(item.getMediaType());
+        if (TextUtils.isEmpty(mediaType) || item.getTmdbId() <= 0) return new ArrayList<>();
+        HttpUrl url = apiBuilder(config.getApiBase() + "/" + mediaType + "/" + item.getTmdbId() + "/" + type, config)
+                .addQueryParameter("language", config.getLanguage())
+                .addQueryParameter("page", String.valueOf(Math.max(1, page)))
+                .build();
+        JsonObject body = requestJson(url.toString(), config, type, DETAIL_CACHE_TTL, "TMDB 推荐返回为空", "TMDB 推荐失败: HTTP ");
+        return items(array(body, "results"), config, mediaType);
+    }
+
     public String translatedOverview(JsonObject detail, @NonNull TmdbConfig config) {
         String current = string(detail, "overview");
         if (!TextUtils.isEmpty(current)) return current;
@@ -669,7 +690,10 @@ public class TmdbService {
             String credit = credit(object);
             String posterPath = string(object, "poster_path");
             String backdropPath = string(object, "backdrop_path");
-            items.add(new TmdbItem(object.get("id").getAsInt(), mediaType, title, subtitle, string(object, "overview"), image(config.getImageBase(), posterPath), image(config.getBackdropBase(), backdropPath), credit, voteValue));
+            String language = string(object, "original_language");
+            String country = firstString(array(object, "origin_country"));
+            List<Integer> genreIds = integers(array(object, "genre_ids"));
+            items.add(new TmdbItem(object.get("id").getAsInt(), mediaType, title, subtitle, string(object, "overview"), image(config.getImageBase(), posterPath), image(config.getBackdropBase(), backdropPath), credit, voteValue, language, country, genreIds));
         }
         return items;
     }
@@ -732,6 +756,18 @@ public class TmdbService {
             current = currentObject.get(key);
         }
         return current != null && current.isJsonObject() ? current.getAsJsonObject() : null;
+    }
+
+    private List<Integer> integers(JsonArray array) {
+        List<Integer> values = new ArrayList<>();
+        for (JsonElement element : array) {
+            if (element == null || element.isJsonNull()) continue;
+            try {
+                values.add(element.getAsInt());
+            } catch (Throwable ignored) {
+            }
+        }
+        return values;
     }
 
     private String normalizeMediaType(String mediaType) {

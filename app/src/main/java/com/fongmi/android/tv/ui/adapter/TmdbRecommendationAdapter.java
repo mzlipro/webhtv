@@ -40,6 +40,40 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
         notifyDataSetChanged();
     }
 
+    public void appendItems(List<TmdbItem> recommendations) {
+        if (recommendations == null || recommendations.isEmpty()) return;
+        int start = items.size();
+        for (TmdbItem item : recommendations) {
+            if (item == null || contains(item)) continue;
+            items.add(item);
+        }
+        if (items.size() > start) notifyItemRangeInserted(start, items.size() - start);
+    }
+
+    public List<TmdbItem> getItems() {
+        return new ArrayList<>(items);
+    }
+
+    private boolean contains(TmdbItem target) {
+        for (TmdbItem item : items) {
+            if (sameItem(item, target)) return true;
+        }
+        return false;
+    }
+
+    private boolean sameItem(TmdbItem first, TmdbItem second) {
+        if (first == null || second == null) return false;
+        if (first.getTmdbId() > 0 && second.getTmdbId() > 0) {
+            return first.getTmdbId() == second.getTmdbId() && first.getMediaType().equals(second.getMediaType());
+        }
+        return normalizedTitle(first).equals(normalizedTitle(second));
+    }
+
+    private String normalizedTitle(TmdbItem item) {
+        String title = item == null ? "" : item.getTitle();
+        return title.replaceAll("[\\s·•・._\\-/\\\\|()（）\\[\\]【】《》<>:：,，.。]+", "").trim().toLowerCase(Locale.ROOT);
+    }
+
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {

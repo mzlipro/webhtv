@@ -46,10 +46,24 @@ public class TmdbUIAdapter {
     private TmdbItem tmdbItem;
     private JsonObject tmdbDetail;
     private List<TmdbPerson> tmdbCast;
+    private List<TmdbItem> recommendations;
     private List<TmdbItem> personalTmdbRecommendations;
     private List<TmdbItem> personalDoubanRecommendations;
+    private PersonalRecommendationService.RecommendationPage personalTmdbPage;
+    private PersonalRecommendationService.RecommendationPage personalDoubanPage;
+    private Vod vod;
+    private int recommendationPage;
+    private boolean recommendationHasMore;
+    private boolean recommendationLoading;
+    private boolean personalTmdbLoading;
+    private boolean personalDoubanLoading;
+    private boolean personalRefreshLoading;
     private boolean loaded;
     private volatile int loadGeneration;
+
+    public interface LoadMoreCallback {
+        void onLoaded(boolean changed);
+    }
 
     public TmdbUIAdapter(Activity activity) {
         this.activity = activity;
@@ -79,16 +93,17 @@ public class TmdbUIAdapter {
     }
 
     public List<TmdbItem> getPersonalTmdbRecommendations() {
-        return getPersonalRecommendations(personalTmdbRecommendations, new ArrayList<>());
+        List<TmdbItem> items = getPersonalRecommendations(personalTmdbRecommendations, new ArrayList<>(), true);
+        return items.isEmpty() ? getPersonalRecommendations(personalTmdbRecommendations, new ArrayList<>(), false) : items;
     }
 
     public List<TmdbItem> getPersonalDoubanRecommendations() {
-        return getPersonalRecommendations(personalDoubanRecommendations, getPersonalTmdbRecommendations());
+        return getPersonalRecommendations(personalDoubanRecommendations, getPersonalTmdbRecommendations(), true);
     }
 
-    private List<TmdbItem> getPersonalRecommendations(List<TmdbItem> personalRecommendations, List<TmdbItem> sourceRecommendations) {
+    private List<TmdbItem> getPersonalRecommendations(List<TmdbItem> personalRecommendations, List<TmdbItem> sourceRecommendations, boolean excludeCurrentRecommendations) {
         if (personalRecommendations == null || personalRecommendations.isEmpty()) return new ArrayList<>();
-        List<TmdbItem> currentRecommendations = getRecommendations();
+        List<TmdbItem> currentRecommendations = excludeCurrentRecommendations ? getRecommendations() : new ArrayList<>();
         List<TmdbItem> items = new ArrayList<>();
         for (TmdbItem item : personalRecommendations) {
             if (containsRecommendation(currentRecommendations, item) || containsRecommendation(items, item)) continue;
@@ -169,8 +184,18 @@ public class TmdbUIAdapter {
         tmdbItem = null;
         tmdbDetail = null;
         tmdbCast = null;
+        recommendations = null;
         personalTmdbRecommendations = null;
         personalDoubanRecommendations = null;
+        personalTmdbPage = null;
+        personalDoubanPage = null;
+        vod = null;
+        recommendationPage = 1;
+        recommendationHasMore = false;
+        recommendationLoading = false;
+        personalTmdbLoading = false;
+        personalDoubanLoading = false;
+        personalRefreshLoading = false;
         loaded = false;
         return generation;
     }
@@ -183,12 +208,20 @@ public class TmdbUIAdapter {
         try {
             JsonObject detail = tmdbService.detail(item, tmdbConfig);
             List<TmdbPerson> cast = tmdbService.cast(detail, tmdbConfig);
-            PersonalRecommendationService.Recommendations recommendations = new PersonalRecommendationService(tmdbService, tmdbConfig).load(vod, item, detail);
+            List<TmdbItem> rankedRecommendations = PersonalRecommendationService.rankTmdbItemsForContext(detail, tmdbService.recommendations(detail, tmdbConfig), tmdbService.similar(detail, tmdbConfig), Integer.MAX_VALUE);
+            PersonalRecommendationService service = new PersonalRecommendationService(tmdbService, tmdbConfig);
+            PersonalRecommendationService.RecommendationPages personalPages = service.loadPage(vod, item, detail, 0, PersonalRecommendationService.DEFAULT_PAGE_SIZE);
             if (!isCurrentGeneration(generation)) return;
+            this.vod = vod;
             tmdbDetail = detail;
             tmdbCast = cast;
-            personalTmdbRecommendations = recommendations.getTmdb();
-            personalDoubanRecommendations = recommendations.getDouban();
+            recommendations = rankedRecommendations;
+            recommendationPage = 1;
+            recommendationHasMore = hasMoreTmdbRelatedPages(detail, "recommendations") || hasMoreTmdbRelatedPages(detail, "similar");
+            personalTmdbPage = personalPages.getTmdb();
+            personalDoubanPage = personalPages.getDouban();
+            personalTmdbRecommendations = personalTmdbPage.getItems();
+            personalDoubanRecommendations = personalDoubanPage.getItems();
             loaded = true;
             if (vod != null) {
                 enrichVod(vod, item, detail);
@@ -199,7 +232,7 @@ public class TmdbUIAdapter {
                 if (!isCurrentGeneration(generation)) return;
                 activity.runOnUiThread(() -> RefreshEvent.vod(vod));
             }
-            SpiderDebug.log("tmdb", "detail loaded title=%s cast=%d", item.getTitle(), getCast().size());
+            SpiderDebug.log("tmdb", "detail loaded title=%s cast=%d personalTmdb=%d personalDouban=%d", item.getTitle(), getCast().size(), personalTmdbRecommendations == null ? 0 : personalTmdbRecommendations.size(), personalDoubanRecommendations == null ? 0 : personalDoubanRecommendations.size());
         } catch (Exception e) {
             SpiderDebug.log("tmdb", "detail load failed: %s", e.getMessage());
             notifyLoadComplete(vod, generation);
@@ -423,22 +456,157 @@ public class TmdbUIAdapter {
      * 获取推荐影片（recommendations + similar 合并去重）。
      */
     public List<TmdbItem> getRecommendations() {
-        if (tmdbDetail == null) return new ArrayList<>();
-        List<TmdbItem> items = new ArrayList<>(tmdbService.recommendations(tmdbDetail, tmdbConfig));
-        List<TmdbItem> similar = tmdbService.similar(tmdbDetail, tmdbConfig);
-        // 去重合并
-        for (TmdbItem item : similar) {
-            boolean exists = false;
-            for (TmdbItem existing : items) {
-                if (existing.getTmdbId() == item.getTmdbId()) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) items.add(item);
-            if (items.size() >= 12) break;
+        return recommendations == null ? new ArrayList<>() : new ArrayList<>(recommendations);
+    }
+
+    public boolean hasMoreRecommendations() {
+        return recommendationHasMore;
+    }
+
+    public boolean hasMorePersonalTmdbRecommendations() {
+        return personalTmdbPage != null && personalTmdbPage.hasMore();
+    }
+
+    public boolean hasMorePersonalDoubanRecommendations() {
+        return personalDoubanPage != null && personalDoubanPage.hasMore();
+    }
+
+    public void loadMoreRecommendations(LoadMoreCallback callback) {
+        if (recommendationLoading || !recommendationHasMore || tmdbItem == null || tmdbDetail == null) {
+            if (callback != null) callback.onLoaded(false);
+            return;
         }
-        return items;
+        int generation = loadGeneration;
+        int nextPage = recommendationPage + 1;
+        recommendationLoading = true;
+        Task.execute(() -> {
+            List<TmdbItem> next = new ArrayList<>();
+            boolean more = false;
+            try {
+                List<TmdbItem> pageRecommendations = tmdbService.recommendations(tmdbItem, tmdbConfig, nextPage);
+                List<TmdbItem> pageSimilar = tmdbService.similar(tmdbItem, tmdbConfig, nextPage);
+                next = PersonalRecommendationService.rankTmdbItemsForContext(tmdbDetail, pageRecommendations, pageSimilar, Integer.MAX_VALUE);
+                more = !pageRecommendations.isEmpty() || !pageSimilar.isEmpty();
+            } catch (Throwable e) {
+                SpiderDebug.log("tmdb", "load more recommendations failed page=%d error=%s", nextPage, e.getMessage());
+            }
+            List<TmdbItem> loadedItems = next;
+            boolean hasMore = more;
+            activity.runOnUiThread(() -> {
+                if (!isCurrentGeneration(generation)) return;
+                recommendationLoading = false;
+                recommendationPage = nextPage;
+                recommendationHasMore = hasMore;
+                boolean changed = appendUnique(recommendations, loadedItems);
+                if (callback != null) callback.onLoaded(changed);
+            });
+        });
+    }
+
+    public void loadMorePersonalTmdbRecommendations(LoadMoreCallback callback) {
+        loadMorePersonalRecommendations(true, callback);
+    }
+
+    public void loadMorePersonalDoubanRecommendations(LoadMoreCallback callback) {
+        loadMorePersonalRecommendations(false, callback);
+    }
+
+    public void refreshPersonalRecommendations(LoadMoreCallback callback) {
+        if (personalRefreshLoading || tmdbDetail == null) {
+            if (callback != null) callback.onLoaded(false);
+            return;
+        }
+        int generation = loadGeneration;
+        personalRefreshLoading = true;
+        Task.execute(() -> {
+            boolean changed = false;
+            PersonalRecommendationService.RecommendationPages pages = PersonalRecommendationService.RecommendationPages.empty();
+            try {
+                PersonalRecommendationService service = new PersonalRecommendationService(tmdbService, tmdbConfig);
+                String tmdbFingerprint = service.historyFingerprint(vod, true);
+                String doubanFingerprint = service.historyFingerprint(vod, false);
+                boolean sameTmdb = personalTmdbPage != null && personalTmdbPage.getHistoryFingerprint().equals(tmdbFingerprint);
+                boolean sameDouban = personalDoubanPage != null && personalDoubanPage.getHistoryFingerprint().equals(doubanFingerprint);
+                if (!sameTmdb || !sameDouban) {
+                    pages = service.loadPage(vod, tmdbItem, tmdbDetail, 0, PersonalRecommendationService.DEFAULT_PAGE_SIZE);
+                    changed = true;
+                }
+            } catch (Throwable e) {
+                SpiderDebug.log("tmdb", "refresh personal recommendations failed error=%s", e.getMessage());
+            }
+            PersonalRecommendationService.RecommendationPages loadedPages = pages;
+            boolean hasChanged = changed;
+            activity.runOnUiThread(() -> {
+                if (!isCurrentGeneration(generation)) return;
+                personalRefreshLoading = false;
+                if (hasChanged) {
+                    personalTmdbPage = loadedPages.getTmdb();
+                    personalDoubanPage = loadedPages.getDouban();
+                    personalTmdbRecommendations = personalTmdbPage.getItems();
+                    personalDoubanRecommendations = personalDoubanPage.getItems();
+                }
+                if (callback != null) callback.onLoaded(hasChanged);
+            });
+        });
+    }
+
+    private void loadMorePersonalRecommendations(boolean tmdb, LoadMoreCallback callback) {
+        PersonalRecommendationService.RecommendationPage page = tmdb ? personalTmdbPage : personalDoubanPage;
+        if (page == null || !page.hasMore() || (tmdb ? personalTmdbLoading : personalDoubanLoading)) {
+            if (callback != null) callback.onLoaded(false);
+            return;
+        }
+        int generation = loadGeneration;
+        if (tmdb) personalTmdbLoading = true;
+        else personalDoubanLoading = true;
+        Task.execute(() -> {
+            PersonalRecommendationService.RecommendationPage nextPage;
+            try {
+                PersonalRecommendationService service = new PersonalRecommendationService(tmdbService, tmdbConfig);
+                nextPage = tmdb
+                        ? service.loadTmdbPage(vod, tmdbItem, tmdbDetail, page.getNextOffset(), PersonalRecommendationService.DEFAULT_PAGE_SIZE)
+                        : service.loadDoubanPage(vod, page.getNextOffset(), PersonalRecommendationService.DEFAULT_PAGE_SIZE);
+            } catch (Throwable e) {
+                SpiderDebug.log("tmdb", "load more personal recommendations failed tmdb=%s error=%s", tmdb, e.getMessage());
+                nextPage = page;
+            }
+            PersonalRecommendationService.RecommendationPage loadedPage = nextPage;
+            activity.runOnUiThread(() -> {
+                if (!isCurrentGeneration(generation)) return;
+                if (tmdb) {
+                    personalTmdbLoading = false;
+                    personalTmdbPage = loadedPage;
+                    boolean changed = appendUnique(personalTmdbRecommendations, loadedPage.getItems());
+                    if (callback != null) callback.onLoaded(changed);
+                } else {
+                    personalDoubanLoading = false;
+                    personalDoubanPage = loadedPage;
+                    boolean changed = appendUnique(personalDoubanRecommendations, loadedPage.getItems());
+                    if (callback != null) callback.onLoaded(changed);
+                }
+            });
+        });
+    }
+
+    private boolean hasMoreTmdbRelatedPages(JsonObject detail, String key) {
+        JsonObject object = detail != null && detail.has(key) && detail.get(key).isJsonObject() ? detail.getAsJsonObject(key) : null;
+        if (object == null || !object.has("total_pages") || object.get("total_pages").isJsonNull()) return false;
+        try {
+            return object.get("total_pages").getAsInt() > 1;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    private boolean appendUnique(List<TmdbItem> target, List<TmdbItem> source) {
+        if (target == null || source == null || source.isEmpty()) return false;
+        boolean changed = false;
+        for (TmdbItem item : source) {
+            if (item == null || containsRecommendation(target, item)) continue;
+            target.add(item);
+            changed = true;
+        }
+        return changed;
     }
 
     private boolean containsRecommendation(List<TmdbItem> items, TmdbItem target) {
