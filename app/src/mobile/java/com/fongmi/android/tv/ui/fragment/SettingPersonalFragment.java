@@ -12,6 +12,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.FragmentSettingPersonalBinding;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.base.BaseFragment;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 public class SettingPersonalFragment extends BaseFragment {
 
@@ -46,6 +47,7 @@ public class SettingPersonalFragment extends BaseFragment {
         mBinding.searchThread.setOnClickListener(this::setSearchThread);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.tmdbMatchMode.setOnClickListener(this::setTmdbMatchMode);
+        mBinding.personalRecommendation.setOnClickListener(this::setPersonalRecommendation);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
         mBinding.searchColumn.setOnClickListener(this::setSearchColumn);
         mBinding.siteColumn.setOnClickListener(this::setSiteColumn);
@@ -55,6 +57,7 @@ public class SettingPersonalFragment extends BaseFragment {
         mBinding.searchThreadText.setText(String.valueOf(Setting.getSearchThread()));
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.tmdbMatchModeText.setText((tmdbMatchMode = getResources().getStringArray(R.array.select_tmdb_match_mode))[Setting.getTmdbMatchMode()]);
+        mBinding.personalRecommendationText.setText(getSwitch(Setting.isPersonalRecommendation()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
         mBinding.searchColumnText.setText(getSearchColumnText());
         mBinding.siteColumnText.setText((siteColumn = getResources().getStringArray(R.array.select_site_column))[Setting.getSiteColumn() - 1]);
@@ -85,6 +88,23 @@ public class SettingPersonalFragment extends BaseFragment {
     private void setTmdbMatchMode(View view) {
         Setting.putTmdbMatchMode((Setting.getTmdbMatchMode() + 1) % tmdbMatchMode.length);
         setText();
+    }
+
+    private void setPersonalRecommendation(View view) {
+        if (Setting.isPersonalRecommendation()) {
+            Setting.putPersonalRecommendation(false);
+            setText();
+            return;
+        }
+        new MaterialAlertDialogBuilder(requireActivity())
+                .setTitle(R.string.personal_recommendation_confirm_title)
+                .setMessage(R.string.personal_recommendation_confirm_message)
+                .setNegativeButton(R.string.dialog_negative, null)
+                .setPositiveButton(R.string.dialog_positive, (dialog, which) -> {
+                    Setting.putPersonalRecommendation(true);
+                    setText();
+                })
+                .show();
     }
 
     private void setSearchUi(View view) {

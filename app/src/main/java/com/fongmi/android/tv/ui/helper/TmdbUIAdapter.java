@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.TmdbMatchCache;
 import com.fongmi.android.tv.bean.TmdbPerson;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.event.RefreshEvent;
+import com.fongmi.android.tv.service.PersonalRecommendationService;
 import com.fongmi.android.tv.service.TmdbService;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.Task;
@@ -45,6 +46,8 @@ public class TmdbUIAdapter {
     private TmdbItem tmdbItem;
     private JsonObject tmdbDetail;
     private List<TmdbPerson> tmdbCast;
+    private List<TmdbItem> personalTmdbRecommendations;
+    private List<TmdbItem> personalDoubanRecommendations;
     private boolean loaded;
 
     public TmdbUIAdapter(Activity activity) {
@@ -72,6 +75,26 @@ public class TmdbUIAdapter {
 
     public List<TmdbPerson> getCast() {
         return tmdbCast == null ? new ArrayList<>() : tmdbCast;
+    }
+
+    public List<TmdbItem> getPersonalTmdbRecommendations() {
+        return getPersonalRecommendations(personalTmdbRecommendations, new ArrayList<>());
+    }
+
+    public List<TmdbItem> getPersonalDoubanRecommendations() {
+        return getPersonalRecommendations(personalDoubanRecommendations, getPersonalTmdbRecommendations());
+    }
+
+    private List<TmdbItem> getPersonalRecommendations(List<TmdbItem> personalRecommendations, List<TmdbItem> sourceRecommendations) {
+        if (personalRecommendations == null || personalRecommendations.isEmpty()) return new ArrayList<>();
+        List<TmdbItem> currentRecommendations = getRecommendations();
+        List<TmdbItem> items = new ArrayList<>();
+        for (TmdbItem item : personalRecommendations) {
+            if (containsRecommendation(currentRecommendations, item) || containsRecommendation(items, item)) continue;
+            if (containsRecommendation(sourceRecommendations, item)) continue;
+            items.add(item);
+        }
+        return items;
     }
 
     /**
@@ -142,6 +165,8 @@ public class TmdbUIAdapter {
         tmdbItem = null;
         tmdbDetail = null;
         tmdbCast = null;
+        personalTmdbRecommendations = null;
+        personalDoubanRecommendations = null;
         loaded = false;
     }
 
@@ -149,6 +174,9 @@ public class TmdbUIAdapter {
         try {
             tmdbDetail = tmdbService.detail(tmdbItem, tmdbConfig);
             tmdbCast = tmdbService.cast(tmdbDetail, tmdbConfig);
+            PersonalRecommendationService.Recommendations recommendations = new PersonalRecommendationService(tmdbService, tmdbConfig).load(vod, tmdbItem, tmdbDetail);
+            personalTmdbRecommendations = recommendations.getTmdb();
+            personalDoubanRecommendations = recommendations.getDouban();
             loaded = true;
             if (vod != null) {
                 enrichVod(vod);
@@ -394,5 +422,25 @@ public class TmdbUIAdapter {
             if (items.size() >= 12) break;
         }
         return items;
+    }
+
+    private boolean containsRecommendation(List<TmdbItem> items, TmdbItem target) {
+        if (items == null || target == null) return false;
+        for (TmdbItem item : items) if (sameRecommendation(item, target)) return true;
+        return false;
+    }
+
+    private boolean sameRecommendation(TmdbItem first, TmdbItem second) {
+        if (first == null || second == null) return false;
+        if (first.getTmdbId() > 0 && second.getTmdbId() > 0) {
+            return first.getTmdbId() == second.getTmdbId() && TextUtils.equals(first.getMediaType(), second.getMediaType());
+        }
+        String firstTitle = normalizeRecommendationTitle(first.getTitle());
+        String secondTitle = normalizeRecommendationTitle(second.getTitle());
+        return !TextUtils.isEmpty(firstTitle) && firstTitle.equals(secondTitle);
+    }
+
+    private String normalizeRecommendationTitle(String text) {
+        return TextUtils.isEmpty(text) ? "" : text.replaceAll("[\\s·•・._\\-/\\\\|()（）\\[\\]【】《》<>:：,，.。]+", "").trim().toLowerCase(Locale.ROOT);
     }
 }

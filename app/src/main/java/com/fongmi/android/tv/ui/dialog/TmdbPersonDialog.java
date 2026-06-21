@@ -20,20 +20,17 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
 import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
-import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.TmdbConfig;
 import com.fongmi.android.tv.bean.TmdbItem;
 import com.fongmi.android.tv.bean.TmdbPerson;
-import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.service.TmdbService;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.activity.VideoActivity;
-import com.fongmi.android.tv.ui.activity.SearchActivity;
 import com.fongmi.android.tv.ui.adapter.TmdbPersonPhotoAdapter;
 import com.fongmi.android.tv.ui.adapter.TmdbPersonWorkAdapter;
+import com.fongmi.android.tv.ui.helper.TmdbNavigation;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.TmdbImageSaver;
@@ -55,6 +52,7 @@ public class TmdbPersonDialog {
 
     private final Activity activity;
     private final TmdbPerson person;
+    private final Site site;
     private final TmdbService tmdbService;
     private final TmdbConfig tmdbConfig;
 
@@ -83,12 +81,22 @@ public class TmdbPersonDialog {
     private boolean initialFocusDone = false;
 
     public static void show(Activity activity, TmdbPerson person) {
-        new TmdbPersonDialog(activity, person).show();
+        show(activity, person, currentSite(activity));
     }
 
-    private TmdbPersonDialog(Activity activity, TmdbPerson person) {
+    public static void show(Activity activity, TmdbPerson person, Site site) {
+        new TmdbPersonDialog(activity, person, site).show();
+    }
+
+    private static Site currentSite(Activity activity) {
+        String key = activity == null || activity.getIntent() == null ? "" : activity.getIntent().getStringExtra("key");
+        return VodConfig.get().getSite(key);
+    }
+
+    private TmdbPersonDialog(Activity activity, TmdbPerson person, Site site) {
         this.activity = activity;
         this.person = person;
+        this.site = site;
         this.tmdbService = new TmdbService();
         this.tmdbConfig = TmdbConfig.objectFrom(Setting.getTmdbConfig());
     }
@@ -413,46 +421,8 @@ public class TmdbPersonDialog {
      * 作品点击 - 优先本站搜索，搜不到再全局搜索。
      */
     private void onWorkClick(TmdbItem item) {
-        String title = item.getTitle();
-        android.util.Log.d("TmdbPersonDialog", "onWorkClick title=" + title);
-        if (TextUtils.isEmpty(title)) {
-            Notify.show("作品标题为空");
-            return;
-        }
-        Site site = VodConfig.get().getHome();
-        if (site == null || site.isEmpty() || !site.isSearchable()) {
-            android.util.Log.d("TmdbPersonDialog", "站源不可用，跳转全局搜索");
-            SearchActivity.start(activity, title);
-            dismissDelayed();
-            return;
-        }
-        Notify.show(activity.getString(R.string.detail_work_searching, title));
-        Task.execute(() -> {
-            try {
-                Vod match = searchCurrentSite(title, site);
-                activity.runOnUiThread(() -> {
-                    if (dialog == null || !dialog.isShowing()) return;
-                    if (match == null) {
-                        android.util.Log.d("TmdbPersonDialog", "本站未匹配，跳转全局搜索");
-                        Notify.show(activity.getString(R.string.detail_work_global_searching, title));
-                        SearchActivity.start(activity, title);
-                        dismissDelayed();
-                        return;
-                    }
-                    android.util.Log.d("TmdbPersonDialog", "匹配成功 key=" + site.getKey() + " id=" + match.getId() + " name=" + match.getName());
-                    VideoActivity.start(activity, site.getKey(), match.getId(), match.getName(), match.getPic());
-                    dismissDelayed();
-                });
-            } catch (Exception e) {
-                android.util.Log.e("TmdbPersonDialog", "搜索异常: " + e.getMessage(), e);
-                activity.runOnUiThread(() -> {
-                    if (dialog != null && dialog.isShowing()) {
-                        SearchActivity.start(activity, title);
-                        dismissDelayed();
-                    }
-                });
-            }
-        });
+        if (item == null || TextUtils.isEmpty(item.getTitle())) return;
+        TmdbNavigation.open(activity, item, site, (targetSite, match) -> VideoActivity.start(activity, targetSite.getKey(), match.getId(), match.getName(), match.getPic()), this::dismissDelayed);
     }
 
     /**
@@ -466,57 +436,6 @@ public class TmdbPersonDialog {
                 }
             }, 300);  // 300ms 延迟
         }
-    }
-
-    /**
-     * 在当前站源搜索作品。
-     */
-    private Vod searchCurrentSite(String keyword, Site site) {
-        try {
-            Result result = SiteApi.searchContent(site, keyword, false, "1");
-            return bestVod(result != null ? result.getList() : new ArrayList<>(), keyword);
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
-    /**
-     * 从搜索结果中找最佳匹配。
-     */
-    private Vod bestVod(List<Vod> items, String keyword) {
-        if (items == null || items.isEmpty()) return null;
-        Vod best = null;
-        int score = Integer.MIN_VALUE;
-        for (Vod item : items) {
-            int current = scoreVod(item, keyword);
-            if (current > score) {
-                score = current;
-                best = item;
-            }
-        }
-        return score > 0 ? best : null;
-    }
-
-    /**
-     * 作品匹配评分。
-     */
-    private int scoreVod(Vod item, String keyword) {
-        if (item == null) return Integer.MIN_VALUE;
-        String normalizedKeyword = normalizeTitle(keyword);
-        String name = normalizeTitle(item.getName());
-        if (name.isEmpty()) return Integer.MIN_VALUE;
-        if (name.equals(normalizedKeyword)) return 300;
-        if (name.contains(normalizedKeyword) || normalizedKeyword.contains(name)) return 220;
-        String remarks = normalizeTitle(item.getRemarks());
-        if (!remarks.isEmpty() && (remarks.contains(normalizedKeyword) || normalizedKeyword.contains(remarks))) return 120;
-        return 0;
-    }
-
-    /**
-     * 标题标准化（去除空格、标点）。
-     */
-    private String normalizeTitle(String text) {
-        return TextUtils.isEmpty(text) ? "" : text.replaceAll("[\\s·•・._\\-/\\\\|()（）\\[\\]【】《》<>]+", "").trim().toLowerCase(Locale.ROOT);
     }
 
     /**

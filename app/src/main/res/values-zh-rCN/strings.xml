@@ -136,6 +136,9 @@
     <string name="setting_home_menu_key">首页菜单键</string>
     <string name="setting_play_back_to_detail">播放返回详情</string>
     <string name="setting_home_history">首页最近观看</string>
+    <string name="setting_personal_recommendation">个性推荐</string>
+    <string name="personal_recommendation_confirm_title">启用个性推荐</string>
+    <string name="personal_recommendation_confirm_message">个性推荐会读取本机观看历史中的影片名称，并可能将当前影片名和历史影片名作为搜索关键词发送到 TMDB 或豆瓣，用于生成相关作品列表。\n\n不会发送播放地址、账号信息、站源配置或播放进度。你可以随时关闭此功能。</string>
     <string name="setting_search_thread">搜索线程</string>
     <string name="setting_search_ui">搜索布局</string>
     <string name="setting_search_column">搜索结果列数</string>
@@ -1059,6 +1062,8 @@
     <string name="tmdb_photos_label">剧照</string>
     <string name="tmdb_crew_label">主创团队</string>
     <string name="tmdb_recommendations_label">猜你喜欢</string>
+    <string name="tmdb_personal_recommendations_tmdb_label">个性推荐 · TMDB</string>
+    <string name="tmdb_personal_recommendations_douban_label">个性推荐 · 豆瓣</string>
     <string name="detail_work_searching">正在当前站源搜索 %1$s...</string>
     <string name="detail_work_global_searching">当前站源无结果，正在全局搜索 %1$s...</string>
     <string name="detail_image_save">保存</string>

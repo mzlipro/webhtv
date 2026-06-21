@@ -469,6 +469,26 @@ public class Setting {
         return mode == TMDB_MATCH_STRICT_DIALOG || mode == TMDB_MATCH_SMART_DIALOG;
     }
 
+    public static boolean isPersonalRecommendation() {
+        if (Prefers.getPrefers().contains("personal_recommendation")) return Prefers.getBoolean("personal_recommendation", false);
+        return Prefers.getBoolean("ai_recommendation", false);
+    }
+
+    public static void putPersonalRecommendation(boolean enabled) {
+        Prefers.put("personal_recommendation", enabled);
+        Prefers.put("ai_recommendation", enabled);
+    }
+
+    @Deprecated
+    public static boolean isAiRecommendation() {
+        return isPersonalRecommendation();
+    }
+
+    @Deprecated
+    public static void putAiRecommendation(boolean enabled) {
+        putPersonalRecommendation(enabled);
+    }
+
     private static int clampTmdbMatchMode(int mode) {
         if (mode == TMDB_MATCH_STRICT || mode == TMDB_MATCH_SMART || mode == TMDB_MATCH_STRICT_DIALOG || mode == TMDB_MATCH_SMART_DIALOG) return mode;
         return TMDB_MATCH_SMART;

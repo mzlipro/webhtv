@@ -62,6 +62,8 @@ public class TmdbHeaderView {
     private TmdbCastAdapter castAdapter;
     private com.fongmi.android.tv.ui.adapter.TmdbPhotoAdapter photoAdapter;
     private TmdbCastAdapter crewAdapter;
+    private com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter personalTmdbRecommendationAdapter;
+    private com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter personalDoubanRecommendationAdapter;
     private com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter recommendationAdapter;
 
     private OnImagesLoadedListener imagesLoadedListener;
@@ -239,6 +241,10 @@ public class TmdbHeaderView {
             headerRoot.findViewById(R.id.tmdbRecommendations).setVisibility(View.GONE);
         }
 
+        // 个性推荐
+        bindRecommendationRow(R.id.tmdbPersonalTmdbRecommendationsLabel, R.id.tmdbPersonalTmdbRecommendations, personalTmdbRecommendationAdapter, adapter.getPersonalTmdbRecommendations());
+        bindRecommendationRow(R.id.tmdbPersonalDoubanRecommendationsLabel, R.id.tmdbPersonalDoubanRecommendations, personalDoubanRecommendationAdapter, adapter.getPersonalDoubanRecommendations());
+
         // 内容填充完成，显示头部容器
         headerRoot.setVisibility(View.VISIBLE);
 
@@ -282,10 +288,32 @@ public class TmdbHeaderView {
         crewAdapter.setOnItemClickListener(this::onPersonClick);
         crewRv.setAdapter(crewAdapter);
 
+        RecyclerView personalTmdbRecommendationsRv = headerRoot.findViewById(R.id.tmdbPersonalTmdbRecommendations);
+        personalTmdbRecommendationAdapter = new com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter();
+        personalTmdbRecommendationAdapter.setOnItemClickListener(this::onRecommendationClick);
+        personalTmdbRecommendationsRv.setAdapter(personalTmdbRecommendationAdapter);
+
+        RecyclerView personalDoubanRecommendationsRv = headerRoot.findViewById(R.id.tmdbPersonalDoubanRecommendations);
+        personalDoubanRecommendationAdapter = new com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter();
+        personalDoubanRecommendationAdapter.setOnItemClickListener(this::onRecommendationClick);
+        personalDoubanRecommendationsRv.setAdapter(personalDoubanRecommendationAdapter);
+
         RecyclerView recommendationsRv = headerRoot.findViewById(R.id.tmdbRecommendations);
         recommendationAdapter = new com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter();
         recommendationAdapter.setOnItemClickListener(this::onRecommendationClick);
         recommendationsRv.setAdapter(recommendationAdapter);
+    }
+
+    private void bindRecommendationRow(int labelId, int recyclerId, com.fongmi.android.tv.ui.adapter.TmdbRecommendationAdapter adapter, List<TmdbItem> items) {
+        if (items != null && !items.isEmpty()) {
+            headerRoot.findViewById(labelId).setVisibility(View.VISIBLE);
+            RecyclerView recyclerView = headerRoot.findViewById(recyclerId);
+            recyclerView.setVisibility(View.VISIBLE);
+            adapter.setItems(items);
+        } else {
+            headerRoot.findViewById(labelId).setVisibility(View.GONE);
+            headerRoot.findViewById(recyclerId).setVisibility(View.GONE);
+        }
     }
 
     private void setupActions() {
@@ -314,7 +342,7 @@ public class TmdbHeaderView {
      */
     private void onPersonClick(com.fongmi.android.tv.bean.TmdbPerson person) {
         if (person == null) return;
-        com.fongmi.android.tv.ui.dialog.TmdbPersonDialog.show(activity, person);
+        com.fongmi.android.tv.ui.dialog.TmdbPersonDialog.show(activity, person, currentSite());
     }
 
     /**
@@ -322,25 +350,30 @@ public class TmdbHeaderView {
      */
     private void onRecommendationClick(TmdbItem item) {
         if (item == null) return;
-        // 优先本站搜索，搜不到再全局搜索
-        com.fongmi.android.tv.bean.Site site = com.fongmi.android.tv.api.config.VodConfig.get().getHome();
+        com.fongmi.android.tv.bean.Site site = currentSite();
         if (site == null || site.isEmpty() || !site.isSearchable()) {
-            com.fongmi.android.tv.ui.activity.SearchActivity.start(activity, item.getTitle());
+            com.fongmi.android.tv.ui.activity.SearchActivity.direct(activity, item.getTitle(), null, item.getPosterUrl(), item.getBackdropUrl());
             return;
         }
         com.fongmi.android.tv.utils.Notify.show(activity.getString(com.fongmi.android.tv.R.string.detail_work_searching, item.getTitle()));
         com.fongmi.android.tv.utils.Task.execute(() -> {
-            com.fongmi.android.tv.bean.Vod match = searchCurrentSite(item.getTitle(), site);
+            com.fongmi.android.tv.bean.Vod match = com.fongmi.android.tv.ui.helper.TmdbNavigation.searchCurrentSite(item.getTitle(), site);
             java.util.ArrayList<String> episodeTitles = fetchEpisodeTitles(item);
             activity.runOnUiThread(() -> {
+                if (activity.isFinishing()) return;
                 if (match == null) {
                     com.fongmi.android.tv.utils.Notify.show(activity.getString(com.fongmi.android.tv.R.string.detail_work_global_searching, item.getTitle()));
-                    com.fongmi.android.tv.ui.activity.SearchActivity.start(activity, item.getTitle());
+                    com.fongmi.android.tv.ui.activity.SearchActivity.direct(activity, item.getTitle(), null, item.getPosterUrl(), item.getBackdropUrl());
                     return;
                 }
-                startVideoActivityWithEpisodes(site.getKey(), match.getId(), match.getName(), episodeTitles);
+                startVideoActivityWithEpisodes(site.getKey(), match.getId(), match.getName(), match.getPic(), episodeTitles);
             });
         });
+    }
+
+    private com.fongmi.android.tv.bean.Site currentSite() {
+        String key = activity == null || activity.getIntent() == null ? "" : activity.getIntent().getStringExtra("key");
+        return com.fongmi.android.tv.api.config.VodConfig.get().getSite(key);
     }
 
     private java.util.ArrayList<String> fetchEpisodeTitles(TmdbItem item) {
@@ -378,11 +411,12 @@ public class TmdbHeaderView {
         return titles;
     }
 
-    private void startVideoActivityWithEpisodes(String key, String id, String name, java.util.ArrayList<String> episodeTitles) {
+    private void startVideoActivityWithEpisodes(String key, String id, String name, String pic, java.util.ArrayList<String> episodeTitles) {
         android.content.Intent intent = new android.content.Intent(activity, com.fongmi.android.tv.ui.activity.VideoActivity.class);
         intent.putExtra("key", key);
         intent.putExtra("id", id);
         intent.putExtra("name", name);
+        intent.putExtra("pic", pic);
         if (episodeTitles != null && !episodeTitles.isEmpty()) {
             intent.putStringArrayListExtra("tmdb_episode_titles", episodeTitles);
         }
@@ -397,45 +431,6 @@ public class TmdbHeaderView {
                 }
             }, 300);  // 300ms 延迟
         }
-    }
-
-    private com.fongmi.android.tv.bean.Vod searchCurrentSite(String keyword, com.fongmi.android.tv.bean.Site site) {
-        try {
-            com.fongmi.android.tv.bean.Result result = com.fongmi.android.tv.api.SiteApi.searchContent(site, keyword, false, "1");
-            return bestVod(result != null ? result.getList() : new java.util.ArrayList<>(), keyword);
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
-    private com.fongmi.android.tv.bean.Vod bestVod(java.util.List<com.fongmi.android.tv.bean.Vod> items, String keyword) {
-        if (items == null || items.isEmpty()) return null;
-        com.fongmi.android.tv.bean.Vod best = null;
-        int score = Integer.MIN_VALUE;
-        for (com.fongmi.android.tv.bean.Vod item : items) {
-            int current = scoreVod(item, keyword);
-            if (current > score) {
-                score = current;
-                best = item;
-            }
-        }
-        return score > 0 ? best : null;
-    }
-
-    private int scoreVod(com.fongmi.android.tv.bean.Vod item, String keyword) {
-        if (item == null) return Integer.MIN_VALUE;
-        String normalizedKeyword = normalizeTitle(keyword);
-        String name = normalizeTitle(item.getName());
-        if (name.isEmpty()) return Integer.MIN_VALUE;
-        if (name.equals(normalizedKeyword)) return 300;
-        if (name.contains(normalizedKeyword) || normalizedKeyword.contains(name)) return 220;
-        String remarks = normalizeTitle(item.getRemarks());
-        if (!remarks.isEmpty() && (remarks.contains(normalizedKeyword) || normalizedKeyword.contains(remarks))) return 120;
-        return 0;
-    }
-
-    private String normalizeTitle(String text) {
-        return android.text.TextUtils.isEmpty(text) ? "" : text.replaceAll("[\\s·•・._\\-/\\\\|()（）\\[\\]【】《》<>]+", "").trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private String extractYear(JsonObject detail) {

@@ -15,6 +15,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.HomeButtonDialog;
 import com.fongmi.android.tv.ui.dialog.HomeMenuKeyDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 public class SettingPersonalActivity extends BaseActivity {
 
@@ -54,6 +55,7 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.homeMenuKey.setOnClickListener(this::setHomeMenuKey);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
         mBinding.tmdbMatchMode.setOnClickListener(this::setTmdbMatchMode);
+        mBinding.personalRecommendation.setOnClickListener(this::setPersonalRecommendation);
         mBinding.homeHistory.setOnClickListener(this::setHomeHistory);
         mBinding.searchThread.setOnClickListener(this::setSearchThread);
         // mBinding.searchUi.setOnClickListener(this::setSearchUi); // 暂不支持横向/纵向布局切换
@@ -67,6 +69,7 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.homeMenuKeyText.setText((homeMenuKey = getResources().getStringArray(R.array.select_home_menu_key))[Setting.getHomeMenuKey()]);
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
         mBinding.tmdbMatchModeText.setText((tmdbMatchMode = getResources().getStringArray(R.array.select_tmdb_match_mode))[Setting.getTmdbMatchMode()]);
+        mBinding.personalRecommendationText.setText(getSwitch(Setting.isPersonalRecommendation()));
         mBinding.homeHistoryText.setText(getSwitch(Setting.isHomeHistory()));
         mBinding.searchThreadText.setText(String.valueOf(Setting.getSearchThread()));
         // mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]); // 暂不支持
@@ -108,6 +111,23 @@ public class SettingPersonalActivity extends BaseActivity {
     private void setTmdbMatchMode(View view) {
         Setting.putTmdbMatchMode((Setting.getTmdbMatchMode() + 1) % tmdbMatchMode.length);
         setText();
+    }
+
+    private void setPersonalRecommendation(View view) {
+        if (Setting.isPersonalRecommendation()) {
+            Setting.putPersonalRecommendation(false);
+            setText();
+            return;
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.personal_recommendation_confirm_title)
+                .setMessage(R.string.personal_recommendation_confirm_message)
+                .setNegativeButton(R.string.dialog_negative, null)
+                .setPositiveButton(R.string.dialog_positive, (dialog, which) -> {
+                    Setting.putPersonalRecommendation(true);
+                    setText();
+                })
+                .show();
     }
 
     private void setHomeHistory(View view) {

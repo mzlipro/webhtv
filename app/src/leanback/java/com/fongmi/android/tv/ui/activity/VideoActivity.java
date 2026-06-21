@@ -60,6 +60,7 @@ import com.fongmi.android.tv.playback.PlaybackEventCollector;
 import com.fongmi.android.tv.player.PlayerHelper;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.service.PersonalRecommendationService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
@@ -83,6 +84,7 @@ import com.fongmi.android.tv.ui.dialog.SubtitleDialog;
 import com.fongmi.android.tv.ui.dialog.TmdbSearchDialog;
 import com.fongmi.android.tv.ui.dialog.TitleDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
+import com.fongmi.android.tv.ui.helper.TmdbNavigation;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.ImgUtil;
@@ -144,6 +146,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private Runnable mTmdbDetailTimeout;
     private boolean mTmdbDetailLoading;
     private boolean mTmdbDetailRevealed;
+    private int mPersonalRecommendationGeneration;
 
     // TMDB 模式相关字段
     private com.fongmi.android.tv.ui.helper.TmdbUIAdapter mTmdbUIAdapter;
@@ -548,6 +551,10 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         mBinding.tmdbCrew.setRowHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         mBinding.tmdbRecommendations.setHorizontalSpacing(ResUtil.dp2px(12));
         mBinding.tmdbRecommendations.setRowHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+        mBinding.tmdbPersonalTmdbRecommendations.setHorizontalSpacing(ResUtil.dp2px(12));
+        mBinding.tmdbPersonalTmdbRecommendations.setRowHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+        mBinding.tmdbPersonalDoubanRecommendations.setHorizontalSpacing(ResUtil.dp2px(12));
+        mBinding.tmdbPersonalDoubanRecommendations.setRowHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
     private void setVideoView() {
@@ -673,6 +680,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         checkKeepImg();
         setText(item);
         updateKeep();
+        if (loadTmdbDetail) hideNativePersonalRecommendations();
+        else loadNativePersonalRecommendations(item);
         if (loadTmdbDetail) showTmdbDetailLoading();
 
         // TMDB 增强：自动匹配并增强 Vod
@@ -2021,6 +2030,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             // 未匹配到 TMDB 数据：直接揭开原版 UI
             if (mTmdbUIAdapter == null || !mTmdbUIAdapter.isLoaded()) {
                 revealTmdbDetail();
+                loadNativePersonalRecommendations(event.getVod());
                 if (shouldShowAutoTmdbMatchDialog(event.getVod())) showManualTmdbMatchDialog();
             }
             // TMDB 加载已结束：若仍卡在剧集加载指示器（电影无集数、未匹配、获取失败等），揭开原版选集列表
@@ -2028,6 +2038,75 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         }
         else if (event.getType() == RefreshEvent.Type.SUBTITLE) player().setSub(Sub.from(event.getPath()));
         else if (event.getType() == RefreshEvent.Type.DANMAKU) player().setDanmaku(Danmaku.from(event.getPath()));
+    }
+
+    private void loadNativePersonalRecommendations(Vod item) {
+        int generation = ++mPersonalRecommendationGeneration;
+        if (!Setting.isPersonalRecommendation()) {
+            clearNativePersonalRecommendations();
+            return;
+        }
+        clearNativePersonalRecommendations();
+        Task.execute(() -> {
+            PersonalRecommendationService.Recommendations recommendations = new PersonalRecommendationService().load(item, null, null);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || generation != mPersonalRecommendationGeneration) return;
+                bindNativePersonalRecommendations(recommendations);
+            });
+        });
+    }
+
+    private void bindNativePersonalRecommendations(PersonalRecommendationService.Recommendations recommendations) {
+        if (recommendations == null || recommendations.isEmpty()) {
+            clearNativePersonalRecommendations();
+            return;
+        }
+        boolean hasTmdb = bindRecommendationGrid(mBinding.tmdbPersonalTmdbRecommendations, mBinding.tmdbPersonalTmdbRecommendationsLabel, recommendations.getTmdb());
+        boolean hasDouban = bindRecommendationGrid(mBinding.tmdbPersonalDoubanRecommendations, mBinding.tmdbPersonalDoubanRecommendationsLabel, recommendations.getDouban());
+        setNativePersonalRecommendationFocus(hasTmdb, hasDouban);
+    }
+
+    private boolean bindRecommendationGrid(androidx.leanback.widget.HorizontalGridView grid, View label, List<TmdbItem> items) {
+        if (items == null || items.isEmpty()) {
+            grid.setVisibility(View.GONE);
+            label.setVisibility(View.GONE);
+            return false;
+        }
+        androidx.leanback.widget.ArrayObjectAdapter adapter = new androidx.leanback.widget.ArrayObjectAdapter(
+            new com.fongmi.android.tv.ui.presenter.TmdbRecommendationPresenter(this::onTmdbRecommendationClick)
+        );
+        adapter.addAll(0, items);
+        grid.setAdapter(new androidx.leanback.widget.ItemBridgeAdapter(adapter));
+        grid.setVisibility(View.VISIBLE);
+        label.setVisibility(View.VISIBLE);
+        return true;
+    }
+
+    private void hideNativePersonalRecommendations() {
+        mPersonalRecommendationGeneration++;
+        clearNativePersonalRecommendations();
+    }
+
+    private void clearNativePersonalRecommendations() {
+        mBinding.tmdbPersonalTmdbRecommendations.setVisibility(View.GONE);
+        mBinding.tmdbPersonalTmdbRecommendationsLabel.setVisibility(View.GONE);
+        mBinding.tmdbPersonalDoubanRecommendations.setVisibility(View.GONE);
+        mBinding.tmdbPersonalDoubanRecommendationsLabel.setVisibility(View.GONE);
+        setNativePersonalRecommendationFocus(false, false);
+    }
+
+    private void setNativePersonalRecommendationFocus(boolean hasTmdb, boolean hasDouban) {
+        int next = hasTmdb ? R.id.tmdbPersonalTmdbRecommendations : hasDouban ? R.id.tmdbPersonalDoubanRecommendations : R.id.flag;
+        setDetailButtonsNextFocus(next);
+        mBinding.tmdbPersonalTmdbRecommendations.setNextFocusDownId(hasDouban ? R.id.tmdbPersonalDoubanRecommendations : R.id.flag);
+        mBinding.tmdbPersonalDoubanRecommendations.setNextFocusDownId(R.id.flag);
+    }
+
+    private void setDetailButtonsNextFocus(int next) {
+        mBinding.content.setNextFocusDownId(next);
+        mBinding.keep.setNextFocusDownId(next);
+        mBinding.change1.setNextFocusDownId(next);
+        mBinding.tmdbRematch.setNextFocusDownId(next);
     }
 
     private void bindTmdbData() {
@@ -2047,6 +2126,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             mBinding.tmdbCast.setVisibility(View.VISIBLE);
             View castLabel = mBinding.getRoot().findViewById(R.id.tmdbCastLabel);
             if (castLabel != null) castLabel.setVisibility(View.VISIBLE);
+            if (lastVisibleGrid == null) setDetailButtonsNextFocus(R.id.tmdbCast);
             lastVisibleGrid = mBinding.tmdbCast;
             hasTmdbContent = true;
         } else {
@@ -2066,6 +2146,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             mBinding.tmdbPhotos.setVisibility(View.VISIBLE);
             View photosLabel = mBinding.getRoot().findViewById(R.id.tmdbPhotosLabel);
             if (photosLabel != null) photosLabel.setVisibility(View.VISIBLE);
+            if (lastVisibleGrid == null) setDetailButtonsNextFocus(R.id.tmdbPhotos);
 
             // 动态设置上一个Grid的nextFocusDown
             if (lastVisibleGrid != null) {
@@ -2090,6 +2171,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             mBinding.tmdbCrew.setVisibility(View.VISIBLE);
             View crewLabel = mBinding.getRoot().findViewById(R.id.tmdbCrewLabel);
             if (crewLabel != null) crewLabel.setVisibility(View.VISIBLE);
+            if (lastVisibleGrid == null) setDetailButtonsNextFocus(R.id.tmdbCrew);
 
             // 动态设置上一个Grid的nextFocusDown
             if (lastVisibleGrid != null) {
@@ -2103,28 +2185,31 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             if (crewLabel != null) crewLabel.setVisibility(View.GONE);
         }
 
-        // 推荐
+        // 猜你喜欢
         java.util.List<com.fongmi.android.tv.bean.TmdbItem> recommendations = mTmdbUIAdapter.getRecommendations();
-        if (!recommendations.isEmpty()) {
-            androidx.leanback.widget.ArrayObjectAdapter recommendationsAdapter = new androidx.leanback.widget.ArrayObjectAdapter(
-                new com.fongmi.android.tv.ui.presenter.TmdbRecommendationPresenter(this::onTmdbRecommendationClick)
-            );
-            recommendationsAdapter.addAll(0, recommendations);
-            mBinding.tmdbRecommendations.setAdapter(new androidx.leanback.widget.ItemBridgeAdapter(recommendationsAdapter));
-            mBinding.tmdbRecommendations.setVisibility(View.VISIBLE);
-            View recommendationsLabel = mBinding.getRoot().findViewById(R.id.tmdbRecommendationsLabel);
-            if (recommendationsLabel != null) recommendationsLabel.setVisibility(View.VISIBLE);
-
-            // 动态设置上一个Grid的nextFocusDown
-            if (lastVisibleGrid != null) {
-                lastVisibleGrid.setNextFocusDownId(R.id.tmdbRecommendations);
-            }
+        if (bindRecommendationGrid(mBinding.tmdbRecommendations, mBinding.tmdbRecommendationsLabel, recommendations)) {
+            if (lastVisibleGrid == null) setDetailButtonsNextFocus(R.id.tmdbRecommendations);
+            if (lastVisibleGrid != null) lastVisibleGrid.setNextFocusDownId(R.id.tmdbRecommendations);
             lastVisibleGrid = mBinding.tmdbRecommendations;
             if (!hasTmdbContent) hasTmdbContent = true;
-        } else {
-            mBinding.tmdbRecommendations.setVisibility(View.GONE);
-            View recommendationsLabel = mBinding.getRoot().findViewById(R.id.tmdbRecommendationsLabel);
-            if (recommendationsLabel != null) recommendationsLabel.setVisibility(View.GONE);
+        }
+
+        // 个性推荐 · TMDB
+        java.util.List<com.fongmi.android.tv.bean.TmdbItem> personalTmdbRecommendations = mTmdbUIAdapter.getPersonalTmdbRecommendations();
+        if (bindRecommendationGrid(mBinding.tmdbPersonalTmdbRecommendations, mBinding.tmdbPersonalTmdbRecommendationsLabel, personalTmdbRecommendations)) {
+            if (lastVisibleGrid == null) setDetailButtonsNextFocus(R.id.tmdbPersonalTmdbRecommendations);
+            if (lastVisibleGrid != null) lastVisibleGrid.setNextFocusDownId(R.id.tmdbPersonalTmdbRecommendations);
+            lastVisibleGrid = mBinding.tmdbPersonalTmdbRecommendations;
+            if (!hasTmdbContent) hasTmdbContent = true;
+        }
+
+        // 个性推荐 · 豆瓣
+        java.util.List<com.fongmi.android.tv.bean.TmdbItem> personalDoubanRecommendations = mTmdbUIAdapter.getPersonalDoubanRecommendations();
+        if (bindRecommendationGrid(mBinding.tmdbPersonalDoubanRecommendations, mBinding.tmdbPersonalDoubanRecommendationsLabel, personalDoubanRecommendations)) {
+            if (lastVisibleGrid == null) setDetailButtonsNextFocus(R.id.tmdbPersonalDoubanRecommendations);
+            if (lastVisibleGrid != null) lastVisibleGrid.setNextFocusDownId(R.id.tmdbPersonalDoubanRecommendations);
+            lastVisibleGrid = mBinding.tmdbPersonalDoubanRecommendations;
+            if (!hasTmdbContent) hasTmdbContent = true;
         }
 
         // 设置最后一个Grid的nextFocusDown到flag
@@ -2139,7 +2224,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             mBinding.change1.setNextFocusDownId(R.id.flag);
         }
 
-        SpiderDebug.log("tmdb-tv", "绑定完成: 演员=%d 剧照=%d 主创=%d 推荐=%d", cast.size(), photos.size(), creators.size(), recommendations.size());
+        SpiderDebug.log("tmdb-tv", "绑定完成: 演员=%d 剧照=%d 主创=%d 推荐=%d 个性TMDB=%d 个性豆瓣=%d", cast.size(), photos.size(), creators.size(), recommendations.size(), personalTmdbRecommendations.size(), personalDoubanRecommendations.size());
 
         // TMDB / OMDB 多来源评分（TMDB / IMDb / 烂番茄 / Metacritic 等）
         bindTmdbOmdbRatings();
@@ -2527,7 +2612,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void onTmdbPersonClick(com.fongmi.android.tv.bean.TmdbPerson person) {
         if (person == null) return;
-        com.fongmi.android.tv.ui.dialog.TmdbPersonDialog.show(this, person);
+        com.fongmi.android.tv.ui.dialog.TmdbPersonDialog.show(this, person, getSite());
     }
 
     private void onTmdbPhotoClick(String url, int position) {
@@ -2537,64 +2622,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private void onTmdbRecommendationClick(com.fongmi.android.tv.bean.TmdbItem item) {
-        if (item == null) return;
-        // 搜索并打开推荐内容
-        com.fongmi.android.tv.bean.Site site = VodConfig.get().getHome();
-        if (site == null || site.isEmpty() || !site.isSearchable()) {
-            com.fongmi.android.tv.ui.activity.SearchActivity.start(this, item.getTitle());
-            return;
-        }
-        Notify.show(getString(R.string.detail_work_searching, item.getTitle()));
-        com.fongmi.android.tv.utils.Task.execute(() -> {
-            com.fongmi.android.tv.bean.Vod match = searchCurrentSite(item.getTitle(), site);
-            runOnUiThread(() -> {
-                if (match == null) {
-                    Notify.show(getString(R.string.detail_work_global_searching, item.getTitle()));
-                    com.fongmi.android.tv.ui.activity.SearchActivity.start(this, item.getTitle());
-                    return;
-                }
-                VideoActivity.start(this, site.getKey(), match.getId(), match.getName(), match.getPic(), null);
-            });
-        });
-    }
-
-    private com.fongmi.android.tv.bean.Vod searchCurrentSite(String keyword, com.fongmi.android.tv.bean.Site site) {
-        try {
-            com.fongmi.android.tv.bean.Result result = SiteApi.searchContent(site, keyword, false, "1");
-            return bestVod(result != null ? result.getList() : new java.util.ArrayList<>(), keyword);
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
-    private com.fongmi.android.tv.bean.Vod bestVod(java.util.List<com.fongmi.android.tv.bean.Vod> items, String keyword) {
-        if (items == null || items.isEmpty()) return null;
-        com.fongmi.android.tv.bean.Vod best = null;
-        int score = Integer.MIN_VALUE;
-        for (com.fongmi.android.tv.bean.Vod item : items) {
-            int current = scoreVod(item, keyword);
-            if (current > score) {
-                score = current;
-                best = item;
-            }
-        }
-        return score > 0 ? best : null;
-    }
-
-    private int scoreVod(com.fongmi.android.tv.bean.Vod item, String keyword) {
-        if (item == null) return Integer.MIN_VALUE;
-        String normalizedKeyword = normalizeTitle(keyword);
-        String name = normalizeTitle(item.getName());
-        if (name.isEmpty()) return Integer.MIN_VALUE;
-        if (name.equals(normalizedKeyword)) return 300;
-        if (name.contains(normalizedKeyword) || normalizedKeyword.contains(name)) return 220;
-        String remarks = normalizeTitle(item.getRemarks());
-        if (!remarks.isEmpty() && (remarks.contains(normalizedKeyword) || normalizedKeyword.contains(remarks))) return 120;
-        return 0;
-    }
-
-    private String normalizeTitle(String text) {
-        return TextUtils.isEmpty(text) ? "" : text.replaceAll("[\\s·•・._\\-/\\\\|()（）\\[\\]【】《》<>]+", "").trim().toLowerCase(java.util.Locale.ROOT);
+        TmdbNavigation.open(this, item, getSite());
     }
 
     private void setPosition() {
