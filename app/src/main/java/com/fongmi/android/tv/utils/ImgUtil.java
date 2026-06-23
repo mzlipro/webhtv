@@ -72,6 +72,15 @@ public class ImgUtil {
         }
     }
 
+    public static void clear(ImageView view) {
+        try {
+            view.setImageDrawable(null);
+            Glide.with(view).clear(view);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
     public static void load(String text, String url, ImageView view) {
         load(text, url, view, true);
     }

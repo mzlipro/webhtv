@@ -25,13 +25,22 @@ import com.github.catvod.utils.Prefers;
 public class Setting {
 
     public static final int TMDB_MODEL_NATIVE = 0;
+    public static final int DETAIL_OPEN_FUSION = 0;
+    public static final int DETAIL_OPEN_ENHANCED = 1;
+    public static final int DETAIL_OPEN_DIRECT = 2;
+    public static final int DETAIL_OPEN_CINEMA = 3;
+    public static final int DETAIL_OPEN_PLAYER = 4;
+    public static final int DETAIL_OPEN_ORIGINAL_ENHANCED = 5;
+    public static final int DETAIL_STYLE_PROFILE = 0;
+    public static final int DETAIL_STYLE_CINEMA = 1;
+    public static final int DETAIL_STYLE_NATIVE = 2;
     public static final int TMDB_MATCH_STRICT = 0;
     public static final int TMDB_MATCH_SMART = 1;
     public static final int TMDB_MATCH_STRICT_DIALOG = 2;
     public static final int TMDB_MATCH_SMART_DIALOG = 3;
     public static final int DETAIL_INTERACTION_SYSTEM = 0;
     public static final int DETAIL_INTERACTION_ORIGINAL = 1;
-    public static final int DETAIL_THEME_CURRENT = 0;
+    public static final int DETAIL_THEME_CURRENT = DETAIL_STYLE_NATIVE;
 
     public static String getDoh() {
         return Prefers.getString("doh");
@@ -400,6 +409,10 @@ public class Setting {
     }
 
     public static boolean isTmdbEnabled() {
+        if (!Prefers.getPrefers().contains("tmdb_enabled")) {
+            if (Prefers.getPrefers().contains("detail_open_mode")) return isTmdbMode(clampDetailOpenMode(Prefers.getInt("detail_open_mode", DETAIL_OPEN_ENHANCED)));
+            if (Prefers.getPrefers().contains("search_detail_page")) return Prefers.getBoolean("search_detail_page", true);
+        }
         return Prefers.getBoolean("tmdb_enabled", false);
     }
 
@@ -420,6 +433,9 @@ public class Setting {
     }
 
     public static int getDetailInteractionMode() {
+        if (Prefers.getPrefers().contains("detail_open_mode")) {
+            return isTmdbMode(getDetailOpenMode()) ? DETAIL_INTERACTION_SYSTEM : DETAIL_INTERACTION_ORIGINAL;
+        }
         if (!Prefers.getPrefers().contains("detail_interaction_mode")) {
             return isTmdbEnabled() ? DETAIL_INTERACTION_SYSTEM : DETAIL_INTERACTION_ORIGINAL;
         }
@@ -429,8 +445,7 @@ public class Setting {
 
     public static void putDetailInteractionMode(int mode) {
         int value = clampDetailInteractionMode(mode);
-        Prefers.put("detail_interaction_mode", value);
-        putTmdbEnabled(value != DETAIL_INTERACTION_ORIGINAL);
+        putDetailOpenMode(value == DETAIL_INTERACTION_ORIGINAL ? DETAIL_OPEN_DIRECT : DETAIL_OPEN_ORIGINAL_ENHANCED);
     }
 
     private static int clampDetailInteractionMode(int mode) {
@@ -438,15 +453,30 @@ public class Setting {
     }
 
     public static int getDetailThemeMode() {
-        return clampDetailThemeMode(Prefers.getInt("detail_theme_mode", DETAIL_THEME_CURRENT));
+        if (Prefers.getPrefers().contains("detail_theme_mode")) {
+            int theme = Prefers.getInt("detail_theme_mode", DETAIL_THEME_CURRENT);
+            if (theme == DETAIL_STYLE_PROFILE && isCurrentThemePreference()) return DETAIL_STYLE_NATIVE;
+            return clampDetailThemeMode(theme);
+        }
+        if (Prefers.getPrefers().contains("tmdb_detail_style")) return clampDetailThemeMode(Prefers.getInt("tmdb_detail_style", DETAIL_STYLE_PROFILE));
+        return getDetailOpenMode() == DETAIL_OPEN_ORIGINAL_ENHANCED ? DETAIL_STYLE_NATIVE : DETAIL_STYLE_PROFILE;
     }
 
     public static void putDetailThemeMode(int mode) {
-        Prefers.put("detail_theme_mode", clampDetailThemeMode(mode));
+        int value = clampDetailThemeMode(mode);
+        Prefers.put("detail_theme_mode", value);
+        Prefers.put("tmdb_detail_style", value);
     }
 
     private static int clampDetailThemeMode(int mode) {
-        return mode == DETAIL_THEME_CURRENT ? DETAIL_THEME_CURRENT : DETAIL_THEME_CURRENT;
+        if (mode == DETAIL_STYLE_PROFILE || mode == DETAIL_STYLE_CINEMA || mode == DETAIL_STYLE_NATIVE) return mode;
+        return DETAIL_STYLE_NATIVE;
+    }
+
+    private static boolean isCurrentThemePreference() {
+        if (Prefers.getPrefers().contains("detail_open_mode")) return false;
+        if (Prefers.getPrefers().contains("tmdb_detail_style")) return false;
+        return Prefers.getPrefers().contains("detail_interaction_mode") && Prefers.getInt("detail_interaction_mode", DETAIL_INTERACTION_ORIGINAL) == DETAIL_INTERACTION_SYSTEM && isTmdbEnabled();
     }
 
     public static int getTmdbMatchMode() {
@@ -503,19 +533,97 @@ public class Setting {
     }
 
     public static boolean isTmdbDetailPage() {
-        return isTmdbMode(getDetailInteractionMode()) && isTmdbEnabled() && getTmdbModel() == TMDB_MODEL_NATIVE && TmdbConfig.objectFrom(getTmdbConfig()).isReady();
+        return isTmdbMode(getDetailOpenMode()) && getTmdbModel() == TMDB_MODEL_NATIVE && TmdbConfig.objectFrom(getTmdbConfig()).isReady();
     }
 
     public static int getDetailOpenMode() {
-        return getDetailInteractionMode();
+        int mode;
+        if (Prefers.getPrefers().contains("detail_open_mode")) {
+            int stored = Prefers.getInt("detail_open_mode", DETAIL_OPEN_ENHANCED);
+            if (stored == DETAIL_OPEN_CINEMA) {
+                if (!Prefers.getPrefers().contains("detail_theme_mode") && !Prefers.getPrefers().contains("tmdb_detail_style")) putDetailThemeMode(DETAIL_STYLE_CINEMA);
+                mode = DETAIL_OPEN_ENHANCED;
+                Prefers.put("detail_open_mode", mode);
+            } else {
+                mode = clampDetailOpenMode(stored);
+            }
+        } else if (Prefers.getPrefers().contains("detail_interaction_mode")) {
+            mode = getDetailInteractionMode() == DETAIL_INTERACTION_SYSTEM ? DETAIL_OPEN_ORIGINAL_ENHANCED : DETAIL_OPEN_DIRECT;
+            Prefers.put("detail_open_mode", mode);
+            migrateCurrentDetailTheme(mode);
+        } else if (Prefers.getPrefers().contains("search_detail_page")) {
+            mode = Prefers.getBoolean("search_detail_page") ? DETAIL_OPEN_ENHANCED : DETAIL_OPEN_DIRECT;
+        } else {
+            mode = isTmdbEnabled() ? DETAIL_OPEN_ORIGINAL_ENHANCED : DETAIL_OPEN_DIRECT;
+            migrateCurrentDetailTheme(mode);
+        }
+        return isTmdbMode(mode) && !isTmdbReady() ? DETAIL_OPEN_DIRECT : mode;
     }
 
     public static void putDetailOpenMode(int mode) {
-        putDetailInteractionMode(mode);
+        if (mode == DETAIL_OPEN_CINEMA) {
+            putDetailThemeMode(DETAIL_STYLE_CINEMA);
+            mode = DETAIL_OPEN_ENHANCED;
+        } else if (mode == DETAIL_OPEN_FUSION) {
+            putDetailThemeMode(DETAIL_STYLE_PROFILE);
+        } else if (mode == DETAIL_OPEN_ORIGINAL_ENHANCED) {
+            putDetailThemeMode(DETAIL_STYLE_NATIVE);
+        }
+        int value = clampDetailOpenMode(mode);
+        Prefers.put("detail_open_mode", value);
+        Prefers.put("detail_interaction_mode", isTmdbMode(value) ? DETAIL_INTERACTION_SYSTEM : DETAIL_INTERACTION_ORIGINAL);
+        putTmdbEnabled(isTmdbMode(value));
     }
 
     public static boolean isTmdbMode(int mode) {
-        return clampDetailInteractionMode(mode) == DETAIL_INTERACTION_SYSTEM;
+        return mode == DETAIL_OPEN_FUSION || mode == DETAIL_OPEN_ENHANCED || mode == DETAIL_OPEN_PLAYER || mode == DETAIL_OPEN_ORIGINAL_ENHANCED;
+    }
+
+    public static boolean isFusionDetailPage() {
+        return getDetailOpenMode() == DETAIL_OPEN_FUSION;
+    }
+
+    public static boolean isPlayerDetailPage() {
+        return getDetailOpenMode() == DETAIL_OPEN_PLAYER;
+    }
+
+    public static boolean isDirectDetailPage() {
+        return getDetailOpenMode() == DETAIL_OPEN_DIRECT;
+    }
+
+    public static boolean isSearchDetailPage() {
+        return getDetailOpenMode() == DETAIL_OPEN_ENHANCED;
+    }
+
+    public static boolean isOriginalEnhancedDetailPage() {
+        return getDetailOpenMode() == DETAIL_OPEN_ORIGINAL_ENHANCED;
+    }
+
+    public static boolean isCinemaDetailPage() {
+        return isTmdbDetailPage() && isTmdbCinemaStyle();
+    }
+
+    public static void putSearchDetailPage(boolean enabled) {
+        putDetailOpenMode(enabled ? DETAIL_OPEN_ENHANCED : DETAIL_OPEN_DIRECT);
+    }
+
+    public static int nextDetailOpenMode() {
+        int[] modes = {DETAIL_OPEN_ORIGINAL_ENHANCED, DETAIL_OPEN_FUSION, DETAIL_OPEN_ENHANCED, DETAIL_OPEN_PLAYER, DETAIL_OPEN_DIRECT};
+        int mode = getDetailOpenMode();
+        for (int i = 0; i < modes.length; i++) if (modes[i] == mode) return modes[(i + 1) % modes.length];
+        return DETAIL_OPEN_ORIGINAL_ENHANCED;
+    }
+
+    private static int clampDetailOpenMode(int mode) {
+        if (mode == DETAIL_OPEN_CINEMA) return DETAIL_OPEN_ENHANCED;
+        if (mode == DETAIL_OPEN_FUSION || mode == DETAIL_OPEN_ENHANCED || mode == DETAIL_OPEN_DIRECT || mode == DETAIL_OPEN_PLAYER || mode == DETAIL_OPEN_ORIGINAL_ENHANCED) return mode;
+        return DETAIL_OPEN_ORIGINAL_ENHANCED;
+    }
+
+    private static void migrateCurrentDetailTheme(int mode) {
+        if (mode != DETAIL_OPEN_ORIGINAL_ENHANCED) return;
+        if (Prefers.getPrefers().contains("tmdb_detail_style")) return;
+        if (!Prefers.getPrefers().contains("detail_theme_mode") || Prefers.getInt("detail_theme_mode", DETAIL_STYLE_PROFILE) == DETAIL_STYLE_PROFILE) putDetailThemeMode(DETAIL_STYLE_NATIVE);
     }
 
     public static int getTmdbDetailStyle() {
@@ -526,12 +634,35 @@ public class Setting {
         putDetailThemeMode(style);
     }
 
+    public static boolean isTmdbCinemaStyle() {
+        return getTmdbDetailStyle() == DETAIL_STYLE_CINEMA;
+    }
+
+    public static boolean isTmdbNativeStyle() {
+        return getTmdbDetailStyle() == DETAIL_STYLE_NATIVE;
+    }
+
     public static int getTmdbDetailTheme() {
-        return getDetailThemeMode();
+        return clampTmdbDetailTheme(Prefers.getInt("tmdb_detail_theme", 0));
     }
 
     public static void putTmdbDetailTheme(int theme) {
-        putDetailThemeMode(theme);
+        Prefers.put("tmdb_detail_theme", clampTmdbDetailTheme(theme));
+    }
+
+    public static int nextTmdbDetailTheme(int theme) {
+        return (clampTmdbDetailTheme(theme) + 1) % 3;
+    }
+
+    public static boolean resolveTmdbDetailLightTheme(int theme, boolean systemNight) {
+        int value = clampTmdbDetailTheme(theme);
+        if (value == 1) return false;
+        if (value == 2) return true;
+        return !systemNight;
+    }
+
+    static int clampTmdbDetailTheme(int theme) {
+        return Math.max(0, Math.min(theme, 2));
     }
 
     public static boolean isHomeHistory() {
@@ -573,6 +704,14 @@ public class Setting {
 
     public static void putPlayBackToDetail(boolean backToDetail) {
         Prefers.put("play_back_to_detail", backToDetail);
+    }
+
+    public static boolean isAutoSkipIntroOutro() {
+        return Prefers.getBoolean("auto_skip_intro_outro", true);
+    }
+
+    public static void putAutoSkipIntroOutro(boolean enabled) {
+        Prefers.put("auto_skip_intro_outro", enabled);
     }
 
     public static int getSearchUi() {

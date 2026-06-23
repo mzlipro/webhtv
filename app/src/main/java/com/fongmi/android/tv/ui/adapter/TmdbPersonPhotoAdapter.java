@@ -26,9 +26,15 @@ public class TmdbPersonPhotoAdapter extends RecyclerView.Adapter<TmdbPersonPhoto
 
     private final List<String> items = new ArrayList<>();
     private final Listener listener;
+    private boolean legacyMode;
 
     public TmdbPersonPhotoAdapter(Listener listener) {
         this.listener = listener;
+    }
+
+    public void setLight(boolean light) {
+        legacyMode = true;
+        notifyDataSetChanged();
     }
 
     public void setItems(List<String> values) {
@@ -40,8 +46,9 @@ public class TmdbPersonPhotoAdapter extends RecyclerView.Adapter<TmdbPersonPhoto
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_tmdb_person_photo, parent, false);
-        return new ViewHolder(view);
+        int layout = legacyMode ? R.layout.adapter_tmdb_person_photo : R.layout.item_tmdb_person_photo;
+        View view = LayoutInflater.from(parent.getContext()).inflate(layout, parent, false);
+        return new ViewHolder(view, legacyMode);
     }
 
     @Override
@@ -66,9 +73,9 @@ public class TmdbPersonPhotoAdapter extends RecyclerView.Adapter<TmdbPersonPhoto
     static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView photo;
 
-        ViewHolder(View view) {
+        ViewHolder(View view, boolean legacyMode) {
             super(view);
-            if (!Util.isLeanback()) {
+            if (!legacyMode && !Util.isLeanback()) {
                 itemView.setFocusable(false);
                 itemView.setFocusableInTouchMode(false);
             }

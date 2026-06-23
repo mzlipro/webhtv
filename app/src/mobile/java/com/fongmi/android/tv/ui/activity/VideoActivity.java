@@ -7,15 +7,21 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.style.ClickableSpan;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -58,6 +64,7 @@ import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Sub;
 import com.fongmi.android.tv.bean.Track;
+import com.fongmi.android.tv.bean.TmdbEpisode;
 import com.fongmi.android.tv.bean.TmdbItem;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.databinding.ActivityVideoBinding;
@@ -67,10 +74,12 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.CustomTarget;
 import com.fongmi.android.tv.model.SiteViewModel;
 import com.fongmi.android.tv.playback.PlaybackEventCollector;
+import com.fongmi.android.tv.player.IntroSkipPlayback;
 import com.fongmi.android.tv.player.PlayerHelper;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.service.PersonalRecommendationService;
+import com.fongmi.android.tv.service.IntroSkipService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
@@ -99,6 +108,7 @@ import com.fongmi.android.tv.ui.dialog.TmdbSearchDialog;
 import com.fongmi.android.tv.ui.dialog.TitleDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.ui.helper.TmdbNavigation;
+import com.fongmi.android.tv.utils.AudioUtil;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.ImgUtil;
@@ -112,6 +122,8 @@ import com.fongmi.android.tv.utils.Traffic;
 import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.crawler.SpiderDebug;
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
+import com.google.android.material.button.MaterialButton;
+import com.google.gson.JsonObject;
 
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
@@ -125,6 +137,10 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private static final int SHORT_DRAMA_SCALE = 4;
     private static final int SHORT_DRAMA_EDGE_MARGIN_DP = 12;
+    private static final int FUSION_PLAYER_TOP_MARGIN_DP = 72;
+    private static final int FUSION_PLAYER_SIDE_MARGIN_DP = 16;
+    private static final int FUSION_PLAYER_HEIGHT_DP = 252;
+    private static final int FUSION_PLAYER_BOTTOM_GAP_DP = 14;
 
     private ActivityVideoBinding mBinding;
     private ViewGroup.LayoutParams mFrameParams;
@@ -142,6 +158,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private SiteViewModel mViewModel;
     private FlagAdapter mFlagAdapter;
     private PlayerOsdController mOsd;
+    private final IntroSkipPlayback mIntroSkipPlayback = new IntroSkipPlayback();
     private ValueAnimator mAnimator;
     private CustomKeyDown mKeyDown;
     private List<String> mBroken;
@@ -180,6 +197,9 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private boolean mTmdbFallbackToNative = false;
     private boolean mTmdbControlsMoved = false;
     private boolean mTmdbAutoDialogShown = false;
+    private boolean mFusionChromeApplied = false;
+    private MaterialButton mFusionThemeButton;
+    private View mFusionPlayerBottomSpacer;
     private int mTmdbDialogGeneration;
     private int mPersonalRecommendationGeneration;
     private final List<TmdbMovedView> mTmdbMovedViews = new ArrayList<>();
@@ -205,6 +225,25 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     public static void collect(Activity activity, String key, String id, String name, String pic, String wallPic) {
         start(activity, key, id, name, pic, null, true, null, wallPic);
+    }
+
+    private static boolean canOpenLegacyTmdbDetail(String key) {
+        return !TextUtils.isEmpty(key) && !SiteApi.PUSH.equals(key) && !AudioUtil.isAudioSiteEnabled(key) && !isShortDramaSiteEnabled(key) && isTmdbSiteEnabled(key);
+    }
+
+    private static boolean isTmdbSiteEnabled(String key) {
+        Site site = VodConfig.get().getSite(key);
+        return Setting.isTmdbSiteEnabled(key, site == null ? "" : site.getName());
+    }
+
+    private static boolean isShortDramaSiteEnabled(String key) {
+        Site site = VodConfig.get().getSite(key);
+        return Setting.isShortDramaSiteEnabled(key, site == null ? "" : site.getName());
+    }
+
+    private static boolean shouldOpenLegacyTmdbDetail(String key) {
+        int mode = Setting.getDetailOpenMode();
+        return canOpenLegacyTmdbDetail(key) && Setting.isTmdbDetailPage() && (mode == Setting.DETAIL_OPEN_ENHANCED || mode == Setting.DETAIL_OPEN_PLAYER);
     }
 
     public static void start(Activity activity, String url) {
@@ -244,6 +283,10 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         ImgUtil.preload(activity, pic);
         if (Setting.isPlaybackArtworkWall() && !TextUtils.isEmpty(wallPic) && !TextUtils.equals(wallPic, pic)) ImgUtil.preload(activity, wallPic);
         if (dispatchToContentHandler(activity, key, id, name, pic, mark)) return;
+        if (tmdbItem == null && shouldOpenLegacyTmdbDetail(key)) {
+            TmdbDetailActivity.start(activity, key, id, name, pic, mark, null, Setting.getDetailOpenMode());
+            return;
+        }
         Intent intent = new Intent(activity, VideoActivity.class);
         intent.putExtra("tmdbMode", tmdbItem != null);
         intent.putExtra("tmdbItem", tmdbItem);
@@ -259,6 +302,51 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     public static void startWithTmdb(Activity activity, String key, String id, String name, String pic, String mark, com.fongmi.android.tv.bean.TmdbItem tmdbItem) {
         start(activity, key, id, name, pic, mark, false, tmdbItem);
+    }
+
+    public static void startDirect(Activity activity, String key, String id, String name, String pic) {
+        startDirect(activity, key, id, name, pic, null);
+    }
+
+    public static void startDirect(Activity activity, String key, String id, String name, String pic, String mark) {
+        if (AudioActivity.startSite(activity, key, id, name, pic, mark)) return;
+        Intent intent = new Intent(activity, VideoActivity.class);
+        intent.putExtra("collect", false);
+        intent.putExtra("mark", mark);
+        intent.putExtra("name", name);
+        intent.putExtra("pic", pic);
+        intent.putExtra("key", key);
+        intent.putExtra("id", id);
+        activity.startActivity(intent);
+    }
+
+    public static void startDirectTmdb(Activity activity, String key, String id, String name, String pic, String mark, ArrayList<String> episodeTitles, TmdbItem item, Vod tmdbVod) {
+        if (AudioActivity.startSite(activity, key, id, name, pic, mark)) return;
+        Intent intent = new Intent(activity, VideoActivity.class);
+        intent.putExtra("tmdbMode", item != null);
+        intent.putExtra("tmdbItem", item);
+        intent.putExtra("collect", false);
+        intent.putExtra("mark", mark);
+        intent.putExtra("name", name);
+        intent.putExtra("pic", pic);
+        intent.putExtra("key", key);
+        intent.putExtra("id", id);
+        intent.putStringArrayListExtra("tmdb_episode_titles", episodeTitles);
+        putTmdbVod(intent, tmdbVod);
+        activity.startActivity(intent);
+    }
+
+    private static void putTmdbVod(Intent intent, Vod vod) {
+        if (vod == null) return;
+        intent.putExtra("tmdb_vod_title", vod.getName());
+        intent.putExtra("tmdb_vod_content", vod.getContent());
+        intent.putExtra("tmdb_vod_pic", vod.getPic());
+        intent.putExtra("tmdb_vod_year", vod.getYear());
+        intent.putExtra("tmdb_vod_area", vod.getArea());
+        intent.putExtra("tmdb_vod_type", vod.getTypeName());
+        intent.putExtra("tmdb_vod_director", vod.getDirector());
+        intent.putExtra("tmdb_vod_actor", vod.getActor());
+        intent.putExtra("tmdb_vod_remark", vod.getRemarks());
     }
 
     private static boolean dispatchToContentHandler(Activity activity, String key, String id, String name, String pic, String mark) {
@@ -543,6 +631,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.episode.setItemAnimator(null);
         mBinding.episode.addItemDecoration(new SpaceItemDecoration(8));
         setEpisodeViewMode(false, false);
+        installEpisodeLongPressFallback();
         mBinding.quality.setHasFixedSize(true);
         mBinding.quality.setItemAnimator(null);
         mBinding.quality.addItemDecoration(new SpaceItemDecoration(8));
@@ -551,6 +640,57 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.parse.setItemAnimator(null);
         mBinding.control.parse.addItemDecoration(new SpaceItemDecoration(8));
         mBinding.control.parse.setAdapter(mParseAdapter = new ParseAdapter(this, ViewType.DARK));
+    }
+
+    private void installEpisodeLongPressFallback() {
+        Handler handler = new Handler(Looper.getMainLooper());
+        int slop = ViewConfiguration.get(this).getScaledTouchSlop();
+        mBinding.episode.addOnItemTouchListener(new RecyclerView.SimpleOnItemTouchListener() {
+            private Runnable pending;
+            private float downX;
+            private float downY;
+
+            @Override
+            public boolean onInterceptTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent event) {
+                handle(event);
+                return false;
+            }
+
+            @Override
+            public void onTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent event) {
+                handle(event);
+            }
+
+            private void handle(MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downX = event.getX();
+                        downY = event.getY();
+                        View child = mBinding.episode.findChildViewUnder(downX, downY);
+                        if (child == null || mEpisodeAdapter == null) return;
+                        int position = mBinding.episode.getChildAdapterPosition(child);
+                        if (position == RecyclerView.NO_POSITION || position >= mEpisodeAdapter.getItems().size()) return;
+                        pending = () -> EpisodeAdapter.showTitlePopup(child, mEpisodeAdapter.getItems().get(position));
+                        handler.postDelayed(pending, ViewConfiguration.getLongPressTimeout());
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        if (Math.abs(event.getX() - downX) > slop || Math.abs(event.getY() - downY) > slop) clear();
+                        break;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        clear();
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            private void clear() {
+                if (pending == null) return;
+                handler.removeCallbacks(pending);
+                pending = null;
+            }
+        });
     }
 
     private void setEpisodeViewMode(boolean gridMode, boolean keepPosition) {
@@ -595,7 +735,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mAnimator = new ValueAnimator();
         mAnimator.setInterpolator(new DecelerateInterpolator());
         mAnimator.addUpdateListener(animation -> {
-            if (isLand() || isFullscreen() || isInPictureInPictureMode()) return;
+            if (isLand() || isFullscreen() || isInPictureInPictureMode() || mFusionChromeApplied) return;
             mFrameParams.height = (int) animation.getAnimatedValue();
             mBinding.video.setLayoutParams(mFrameParams);
         });
@@ -1452,7 +1592,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void setContextWall(String url) {
-        if (!Setting.isPlaybackArtworkWall()) {
+        if (!Setting.isPlaybackArtworkWall() && !Setting.isFusionDetailPage()) {
             mContextWallUrl = "";
             hideContextWall();
             return;
@@ -1598,6 +1738,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void updateHistory(Episode item) {
         boolean sameEpisode = item.matchesName(mHistory.getEpisode());
         boolean sameFlag = TextUtils.equals(mHistory.getVodFlag(), getFlag().getFlag());
+        if (!sameEpisode || !sameFlag) mIntroSkipPlayback.reset();
         if ((!sameEpisode || !sameFlag) && service() != null) {
             updatePlaybackHistoryPosition();
             PlaybackEventCollector.get().onStop(player());
@@ -1680,7 +1821,9 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
                 moveFlagAndEpisodeToTmdb();
                 mBinding.progressLayout.showContent();
                 mTmdbHeaderView.bind(mTmdbUIAdapter);
+                applyFusionPlayerBelowSpacing();
                 updateTmdbKeepState();
+                requestIntroSkipPlan();
             } else {
                 android.util.Log.d("VideoActivity", "TMDB 加载失败，回退到原生详情");
                 showNativeDetailFallback(item);
@@ -1737,6 +1880,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setDecode();
         setPosition();
         mClock.setCallback(this);
+        requestIntroSkipPlan();
     }
 
     @Override
@@ -1796,6 +1940,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
                 checkControl();
                 player().reset();
                 applyShortDramaMode();
+                requestIntroSkipPlan();
+                applyAutoIntroSkip();
                 break;
             case Player.STATE_ENDED:
                 checkEnded(true);
@@ -1839,6 +1985,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         android.util.Log.d("VideoActivity", "onTimeChanged: position=" + position + " duration=" + duration + " canSave=" + mHistory.canSave());
         PlaybackEventCollector.get().onProgress(mHistory, player());
         if (mHistory.canSave() && mHistory.canSync()) syncHistory();
+        if (applyAutoIntroSkip()) return;
         if (mHistory.getEnding() > 0 && duration > 0 && mHistory.getEnding() + position >= duration) {
             checkEnded(false);
         }
@@ -1866,6 +2013,50 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         else if (event.getType() == RefreshEvent.Type.HISTORY) refreshPersonalRecommendationsForHistory();
         else if (event.getType() == RefreshEvent.Type.SUBTITLE) player().setSub(Sub.from(event.getPath()));
         else if (event.getType() == RefreshEvent.Type.DANMAKU) player().setDanmaku(Danmaku.from(event.getPath()));
+    }
+
+    private void requestIntroSkipPlan() {
+        if (!Setting.isAutoSkipIntroOutro() || player() == null) {
+            mIntroSkipPlayback.reset();
+            return;
+        }
+        IntroSkipService.Query query = buildIntroSkipQuery();
+        if (query == null) return;
+        mIntroSkipPlayback.request(query, this::applyAutoIntroSkip);
+    }
+
+    private boolean applyAutoIntroSkip() {
+        if (!Setting.isAutoSkipIntroOutro() || player() == null) return false;
+        return mIntroSkipPlayback.apply(player(), () -> checkEnded(false));
+    }
+
+    private IntroSkipService.Query buildIntroSkipQuery() {
+        TmdbItem item = getIntroSkipTmdbItem();
+        if (item == null || item.getTmdbId() <= 0) return null;
+        Episode episode = getEpisode();
+        int season = 0;
+        int number = 0;
+        if (item.isTv()) {
+            TmdbEpisode tmdbEpisode = episode == null ? null : episode.getTmdbEpisode();
+            season = tmdbEpisode == null ? 1 : tmdbEpisode.getSeasonNumber();
+            number = tmdbEpisode == null ? (episode == null ? 0 : episode.getNumber()) : tmdbEpisode.getNumber();
+            if (season <= 0 || number <= 0) return null;
+        }
+        long duration = player() == null ? 0 : Math.max(0, player().getDuration());
+        return new IntroSkipService.Query(item.getTmdbId(), getIntroSkipImdbId(), item.getMediaType(), season, number, duration);
+    }
+
+    private TmdbItem getIntroSkipTmdbItem() {
+        TmdbItem item = mTmdbUIAdapter == null ? null : mTmdbUIAdapter.getTmdbItem();
+        return item == null ? getTmdbItem() : item;
+    }
+
+    private String getIntroSkipImdbId() {
+        JsonObject detail = mTmdbUIAdapter == null ? null : mTmdbUIAdapter.getTmdbDetail();
+        JsonObject externalIds = detail != null && detail.has("external_ids") && !detail.get("external_ids").isJsonNull()
+                ? detail.getAsJsonObject("external_ids") : null;
+        if (externalIds == null || !externalIds.has("imdb_id") || externalIds.get("imdb_id").isJsonNull()) return "";
+        return externalIds.get("imdb_id").getAsString();
     }
 
     private void setPosition() {
@@ -2098,6 +2289,9 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
             public void onImagesLoaded() {
                 // TMDB 内容加载完成，设置标记并隐藏进度条
                 android.util.Log.d("VideoActivity", "TMDB 内容加载完成，隐藏进度条");
+                if (Setting.isFusionDetailPage() && mTmdbUIAdapter != null && mTmdbUIAdapter.getTmdbItem() != null) {
+                    setContextWall(mTmdbUIAdapter.getTmdbItem().getBackdropUrl());
+                }
                 mTmdbContentLoaded = true;
                 hideProgress();
             }
@@ -2109,11 +2303,128 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.search.setVisibility(View.GONE);
         if (mBinding.videoShadow != null) mBinding.videoShadow.setVisibility(View.GONE);  // 隐藏播放器下方的阴影
 
-        // 设置 ScrollView 背景为黑色（与 TMDB 头部一致）
-        mBinding.scroll.setBackgroundColor(0xFF0F141A);  // #0F141A
+        if (Setting.isFusionDetailPage()) {
+            applyFusionDetailChrome();
+        } else {
+            mBinding.scroll.setBackgroundColor(com.fongmi.android.tv.ui.custom.TmdbHeaderView.getThemeBackgroundColor());
+        }
 
         // 移除 nativeContentContainer 的 padding，避免空白间隔
         if (mBinding.nativeContentContainer != null) mBinding.nativeContentContainer.setPadding(0, 0, 0, 0);
+    }
+
+    private void applyFusionDetailChrome() {
+        if (mFusionChromeApplied) return;
+        mFusionChromeApplied = true;
+        applyFusionThemeSurface();
+
+        RelativeLayout.LayoutParams wallParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+        mBinding.contextWall.setLayoutParams(wallParams);
+        mBinding.videoContextScrim.setVisibility(View.GONE);
+
+        RelativeLayout.LayoutParams videoParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, ResUtil.dp2px(FUSION_PLAYER_HEIGHT_DP));
+        videoParams.addRule(RelativeLayout.BELOW, R.id.statusBar);
+        videoParams.setMargins(ResUtil.dp2px(FUSION_PLAYER_SIDE_MARGIN_DP), ResUtil.dp2px(FUSION_PLAYER_TOP_MARGIN_DP), ResUtil.dp2px(FUSION_PLAYER_SIDE_MARGIN_DP), 0);
+        mFrameParams = videoParams;
+        mBinding.video.setLayoutParams(videoParams);
+        setFusionPlayerBottomGap();
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.BLACK);
+        background.setCornerRadius(ResUtil.dp2px(20));
+        mBinding.video.setBackground(background);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) mBinding.video.setClipToOutline(true);
+
+        ensureFusionThemeButton();
+        updateFusionThemeButton();
+    }
+
+    private void setFusionPlayerBottomGap() {
+        ensureFusionPlayerBottomSpacer();
+        ViewGroup.LayoutParams params = mBinding.swipeLayout.getLayoutParams();
+        if (!(params instanceof RelativeLayout.LayoutParams layoutParams)) return;
+        layoutParams.addRule(RelativeLayout.BELOW, mFusionPlayerBottomSpacer.getId());
+        layoutParams.topMargin = 0;
+        mBinding.swipeLayout.setLayoutParams(layoutParams);
+    }
+
+    private void ensureFusionPlayerBottomSpacer() {
+        if (mFusionPlayerBottomSpacer != null) return;
+        mFusionPlayerBottomSpacer = new View(this);
+        mFusionPlayerBottomSpacer.setId(View.generateViewId());
+        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, ResUtil.dp2px(FUSION_PLAYER_BOTTOM_GAP_DP));
+        params.addRule(RelativeLayout.BELOW, R.id.video);
+        ((RelativeLayout) mBinding.getRoot()).addView(mFusionPlayerBottomSpacer, params);
+    }
+
+    private void ensureFusionThemeButton() {
+        if (mFusionThemeButton != null) return;
+        mFusionThemeButton = new MaterialButton(this);
+        mFusionThemeButton.setAllCaps(false);
+        mFusionThemeButton.setMinHeight(ResUtil.dp2px(40));
+        mFusionThemeButton.setMinWidth(ResUtil.dp2px(126));
+        mFusionThemeButton.setTextSize(14);
+        mFusionThemeButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        mFusionThemeButton.setCornerRadius(ResUtil.dp2px(24));
+        mFusionThemeButton.setStrokeWidth(ResUtil.dp2px(1));
+        mFusionThemeButton.setPadding(ResUtil.dp2px(16), 0, ResUtil.dp2px(16), 0);
+        mFusionThemeButton.setOnClickListener(view -> cycleFusionTheme());
+        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, ResUtil.dp2px(48));
+        params.addRule(RelativeLayout.ALIGN_PARENT_END);
+        params.addRule(RelativeLayout.BELOW, R.id.statusBar);
+        params.setMargins(0, ResUtil.dp2px(14), ResUtil.dp2px(24), 0);
+        ((RelativeLayout) mBinding.getRoot()).addView(mFusionThemeButton, params);
+    }
+
+    private void cycleFusionTheme() {
+        Setting.putTmdbDetailTheme(Setting.nextTmdbDetailTheme(Setting.getTmdbDetailTheme()));
+        applyFusionThemeSurface();
+        updateFusionThemeButton();
+        if (mTmdbHeaderView != null && mTmdbUIAdapter != null && mTmdbUIAdapter.isLoaded()) {
+            mTmdbHeaderView.bind(mTmdbUIAdapter);
+            applyFusionPlayerBelowSpacing();
+        }
+    }
+
+    private void applyFusionPlayerBelowSpacing() {
+        if (!Setting.isFusionDetailPage() || mTmdbHeaderView == null || mTmdbHeaderView.getHeaderRoot() == null) return;
+        View actions = mTmdbHeaderView.getHeaderRoot().findViewById(R.id.tmdbActionsScroll);
+        if (actions == null || !(actions.getLayoutParams() instanceof ViewGroup.MarginLayoutParams params)) return;
+        params.topMargin = 0;
+        actions.setLayoutParams(params);
+    }
+
+    private void applyFusionThemeSurface() {
+        boolean light = isFusionLightTheme();
+        mBinding.getRoot().setBackgroundColor(light ? 0xFFF3F6F9 : 0xFF0F141A);
+        mBinding.scroll.setBackgroundColor(Color.TRANSPARENT);
+        mBinding.swipeLayout.setBackgroundColor(Color.TRANSPARENT);
+        mBinding.progressLayout.setBackgroundColor(Color.TRANSPARENT);
+    }
+
+    private void updateFusionThemeButton() {
+        if (mFusionThemeButton == null) return;
+        boolean light = isFusionLightTheme();
+        mFusionThemeButton.setText(fusionThemeLabel());
+        mFusionThemeButton.setTextColor(light ? 0xFF12202D : 0xFFE9F0F5);
+        mFusionThemeButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(light ? 0xE6E7EDF3 : 0xCC252A32));
+        mFusionThemeButton.setStrokeColor(android.content.res.ColorStateList.valueOf(light ? 0x33424B57 : 0x42FFFFFF));
+    }
+
+    private String fusionThemeLabel() {
+        if (Setting.isTmdbCinemaStyle()) return getString(R.string.detail_theme_dark);
+        int theme = Setting.getTmdbDetailTheme();
+        if (theme == 1) return getString(R.string.detail_theme_dark);
+        if (theme == 2) return getString(R.string.detail_theme_light);
+        return getString(R.string.detail_theme_auto);
+    }
+
+    private boolean isFusionLightTheme() {
+        if (Setting.isTmdbCinemaStyle()) return false;
+        return Setting.resolveTmdbDetailLightTheme(Setting.getTmdbDetailTheme(), isSystemNight());
+    }
+
+    private boolean isSystemNight() {
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
     }
 
     private void hideTmdbHeader() {

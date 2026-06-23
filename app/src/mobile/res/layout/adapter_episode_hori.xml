@@ -20,91 +20,94 @@
         android:textSize="14sp"
         tools:text="20" />
 
-    <!-- TMDB 卡片模式 -->
+    <!-- TMDB 卡片模式：旧版光影剧幕覆盖式剧照卡 -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/card"
-        android:layout_width="200dp"
-        android:layout_height="wrap_content"
+        android:layout_width="230dp"
+        android:layout_height="190dp"
         android:layout_marginEnd="12dp"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/selector_card"
+        app:cardBackgroundColor="#CC16202A"
         app:cardCornerRadius="8dp"
-        app:cardElevation="2dp"
+        app:cardElevation="0dp"
         app:strokeColor="@color/selector_episode_card_stroke"
         app:strokeWidth="1dp">
 
-        <LinearLayout
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:layout_height="match_parent">
 
-            <!-- 剧照 -->
             <ImageView
                 android:id="@+id/still"
                 android:layout_width="match_parent"
-                android:layout_height="112dp"
-                android:background="#1A1A1A"
+                android:layout_height="match_parent"
+                android:background="#16202A"
                 android:contentDescription="@null"
                 android:scaleType="centerCrop" />
 
-            <!-- 标题和简介 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="96dp"
+                android:layout_gravity="bottom"
+                android:background="@drawable/shape_episode_card_overlay" />
+
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/rating"
+                android:layout_width="wrap_content"
+                android:layout_height="24dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="8dp"
+                android:background="@drawable/shape_episode_card_badge"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:textColor="@android:color/white"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="★8.5"
+                tools:visibility="visible" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
                 android:orientation="vertical"
-                android:padding="8dp">
+                android:paddingStart="10dp"
+                android:paddingTop="18dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="10dp">
 
-                <!-- 标题和评分行 -->
-                <LinearLayout
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/cardTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@android:color/white"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    tools:text="1. 去有鳳凰的地方" />
 
-                    <!-- 集数标题 -->
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/cardTitle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:textColor="@color/white"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        tools:text="1. 去有鳳凰的地方" />
-
-                    <!-- 评分 -->
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/rating"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:textColor="#FFD700"
-                        android:textSize="12sp"
-                        android:visibility="gone"
-                        tools:text="★8.5"
-                        tools:visibility="visible" />
-
-                </LinearLayout>
-
-                <!-- 简介 -->
                 <com.google.android.material.textview.MaterialTextView
                     android:id="@+id/overview"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:ellipsize="end"
+                    android:lineSpacingExtra="1dp"
                     android:maxLines="2"
-                    android:textColor="#AAAAAA"
-                    android:textSize="12sp"
+                    android:textColor="#E6FFFFFF"
+                    android:textSize="10sp"
                     tools:text="这是集数的简介内容..." />
 
             </LinearLayout>
 
-        </LinearLayout>
+        </FrameLayout>
 
     </com.google.android.material.card.MaterialCardView>
 

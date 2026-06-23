@@ -52,6 +52,7 @@ import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Sub;
 import com.fongmi.android.tv.bean.TmdbItem;
+import com.fongmi.android.tv.bean.TmdbEpisode;
 import com.fongmi.android.tv.bean.Track;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.databinding.ActivityVideoBinding;
@@ -60,9 +61,11 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.CustomTarget;
 import com.fongmi.android.tv.model.SiteViewModel;
 import com.fongmi.android.tv.playback.PlaybackEventCollector;
+import com.fongmi.android.tv.player.IntroSkipPlayback;
 import com.fongmi.android.tv.player.PlayerHelper;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.service.IntroSkipService;
 import com.fongmi.android.tv.service.PersonalRecommendationService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
@@ -88,6 +91,7 @@ import com.fongmi.android.tv.ui.dialog.TmdbSearchDialog;
 import com.fongmi.android.tv.ui.dialog.TitleDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.ui.helper.TmdbNavigation;
+import com.fongmi.android.tv.utils.AudioUtil;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.ImgUtil;
@@ -99,6 +103,7 @@ import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.crawler.SpiderDebug;
 import com.github.bassaer.library.MDColor;
+import com.google.gson.JsonObject;
 
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
@@ -138,6 +143,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private PartAdapter mPartAdapter;
     private BackdropAdapter mBackdropAdapter;
     private PlayerOsdController mOsd;
+    private final IntroSkipPlayback mIntroSkipPlayback = new IntroSkipPlayback();
     private CustomKeyDownVod mKeyDown;
     private SiteViewModel mViewModel;
     private List<String> mBroken;
@@ -216,6 +222,25 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         start(activity, key, id, name, pic, null, true, false, null, wallPic);
     }
 
+    private static boolean canOpenLegacyTmdbDetail(String key, boolean cast) {
+        return !cast && !TextUtils.isEmpty(key) && !SiteApi.PUSH.equals(key) && !AudioUtil.isAudioSiteEnabled(key) && !isShortDramaSiteEnabled(key) && isTmdbSiteEnabled(key);
+    }
+
+    private static boolean isTmdbSiteEnabled(String key) {
+        Site site = VodConfig.get().getSite(key);
+        return Setting.isTmdbSiteEnabled(key, site == null ? "" : site.getName());
+    }
+
+    private static boolean isShortDramaSiteEnabled(String key) {
+        Site site = VodConfig.get().getSite(key);
+        return Setting.isShortDramaSiteEnabled(key, site == null ? "" : site.getName());
+    }
+
+    private static boolean shouldOpenLegacyTmdbDetail(String key, boolean cast) {
+        int mode = Setting.getDetailOpenMode();
+        return canOpenLegacyTmdbDetail(key, cast) && Setting.isTmdbDetailPage() && (mode == Setting.DETAIL_OPEN_ENHANCED || mode == Setting.DETAIL_OPEN_PLAYER);
+    }
+
     public static void start(Activity activity, String url) {
         if (dispatchToContentHandler(activity, url)) return;
         start(activity, SiteApi.PUSH, url, url);
@@ -258,6 +283,10 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             SpiderDebug.log("video-flow", "dispatched to content handler key=%s", key);
             return;
         }
+        if (tmdbItem == null && shouldOpenLegacyTmdbDetail(key, cast)) {
+            TmdbDetailActivity.start(activity, key, id, name, pic, mark, null, Setting.getDetailOpenMode());
+            return;
+        }
         Intent intent = new Intent(activity, VideoActivity.class);
         intent.putExtra("launchTime", launch);
         intent.putExtra("tmdbMode", tmdbItem != null);
@@ -276,6 +305,53 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     public static void startWithTmdb(Activity activity, String key, String id, String name, String pic, String mark, com.fongmi.android.tv.bean.TmdbItem tmdbItem) {
         start(activity, key, id, name, pic, mark, false, false, tmdbItem);
+    }
+
+    public static void startDirect(Activity activity, String key, String id, String name, String pic) {
+        startDirect(activity, key, id, name, pic, null);
+    }
+
+    public static void startDirect(Activity activity, String key, String id, String name, String pic, String mark) {
+        if (AudioActivity.startSite(activity, key, id, name, pic, mark)) return;
+        Intent intent = new Intent(activity, VideoActivity.class);
+        intent.putExtra("collect", false);
+        intent.putExtra("cast", false);
+        intent.putExtra("mark", mark);
+        intent.putExtra("name", name);
+        intent.putExtra("pic", pic);
+        intent.putExtra("key", key);
+        intent.putExtra("id", id);
+        activity.startActivity(intent);
+    }
+
+    public static void startDirectTmdb(Activity activity, String key, String id, String name, String pic, String mark, ArrayList<String> episodeTitles, TmdbItem item, Vod tmdbVod) {
+        if (AudioActivity.startSite(activity, key, id, name, pic, mark)) return;
+        Intent intent = new Intent(activity, VideoActivity.class);
+        intent.putExtra("tmdbMode", item != null);
+        intent.putExtra("tmdbItem", item);
+        intent.putExtra("collect", false);
+        intent.putExtra("cast", false);
+        intent.putExtra("mark", mark);
+        intent.putExtra("name", name);
+        intent.putExtra("pic", pic);
+        intent.putExtra("key", key);
+        intent.putExtra("id", id);
+        intent.putStringArrayListExtra("tmdb_episode_titles", episodeTitles);
+        putTmdbVod(intent, tmdbVod);
+        activity.startActivity(intent);
+    }
+
+    private static void putTmdbVod(Intent intent, Vod vod) {
+        if (vod == null) return;
+        intent.putExtra("tmdb_vod_title", vod.getName());
+        intent.putExtra("tmdb_vod_content", vod.getContent());
+        intent.putExtra("tmdb_vod_pic", vod.getPic());
+        intent.putExtra("tmdb_vod_year", vod.getYear());
+        intent.putExtra("tmdb_vod_area", vod.getArea());
+        intent.putExtra("tmdb_vod_type", vod.getTypeName());
+        intent.putExtra("tmdb_vod_director", vod.getDirector());
+        intent.putExtra("tmdb_vod_actor", vod.getActor());
+        intent.putExtra("tmdb_vod_remark", vod.getRemarks());
     }
 
     private static boolean dispatchToContentHandler(Activity activity, String key, String id, String name, String pic, String mark, boolean cast) {
@@ -1931,6 +2007,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     private void updateHistory(Episode item) {
         boolean sameEpisode = item.matchesName(mHistory.getEpisode());
         boolean sameFlag = TextUtils.equals(mHistory.getVodFlag(), getFlag().getFlag());
+        if (!sameEpisode || !sameFlag) mIntroSkipPlayback.reset();
         if ((!sameEpisode || !sameFlag) && service() != null) {
             updatePlaybackHistoryPosition();
             PlaybackEventCollector.get().onStop(player());
@@ -2061,6 +2138,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         setDecode();
         setPosition();
         mClock.setCallback(this);
+        requestIntroSkipPlan();
     }
 
     @Override
@@ -2110,6 +2188,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
                 hideProgress();
                 player().reset();
                 applyShortDramaMode();
+                requestIntroSkipPlan();
+                applyAutoIntroSkip();
                 break;
             case Player.STATE_ENDED:
                 checkEnded(true);
@@ -2150,6 +2230,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         android.util.Log.d("VideoActivity", "onTimeChanged: position=" + position + " duration=" + duration + " canSave=" + mHistory.canSave());
         PlaybackEventCollector.get().onProgress(mHistory, player());
         if (mHistory.canSave() && mHistory.canSync()) syncHistory();
+        if (applyAutoIntroSkip()) return;
         if (mHistory.getEnding() > 0 && duration > 0 && mHistory.getEnding() + position >= duration) {
             checkEnded(false);
         }
@@ -2511,6 +2592,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
         // TMDB 数据全部绑定完成，揭开遮罩并应用 TMDB 字段
         finishTmdbDetail();
+        requestIntroSkipPlan();
     }
 
     /**
@@ -3008,6 +3090,50 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void onTmdbRecommendationClick(com.fongmi.android.tv.bean.TmdbItem item) {
         TmdbNavigation.open(this, item, getSite());
+    }
+
+    private void requestIntroSkipPlan() {
+        if (!Setting.isAutoSkipIntroOutro() || player() == null) {
+            mIntroSkipPlayback.reset();
+            return;
+        }
+        IntroSkipService.Query query = buildIntroSkipQuery();
+        if (query == null) return;
+        mIntroSkipPlayback.request(query, this::applyAutoIntroSkip);
+    }
+
+    private boolean applyAutoIntroSkip() {
+        if (!Setting.isAutoSkipIntroOutro() || player() == null) return false;
+        return mIntroSkipPlayback.apply(player(), () -> checkEnded(false));
+    }
+
+    private IntroSkipService.Query buildIntroSkipQuery() {
+        TmdbItem item = getIntroSkipTmdbItem();
+        if (item == null || item.getTmdbId() <= 0) return null;
+        Episode episode = getEpisode();
+        int season = 0;
+        int number = 0;
+        if (item.isTv()) {
+            TmdbEpisode tmdbEpisode = episode == null ? null : episode.getTmdbEpisode();
+            season = tmdbEpisode == null ? 1 : tmdbEpisode.getSeasonNumber();
+            number = tmdbEpisode == null ? (episode == null ? 0 : episode.getNumber()) : tmdbEpisode.getNumber();
+            if (season <= 0 || number <= 0) return null;
+        }
+        long duration = player() == null ? 0 : Math.max(0, player().getDuration());
+        return new IntroSkipService.Query(item.getTmdbId(), getIntroSkipImdbId(), item.getMediaType(), season, number, duration);
+    }
+
+    private TmdbItem getIntroSkipTmdbItem() {
+        TmdbItem item = mTmdbUIAdapter == null ? null : mTmdbUIAdapter.getTmdbItem();
+        return item == null ? getTmdbItem() : item;
+    }
+
+    private String getIntroSkipImdbId() {
+        JsonObject detail = mTmdbUIAdapter == null ? null : mTmdbUIAdapter.getTmdbDetail();
+        JsonObject externalIds = detail != null && detail.has("external_ids") && !detail.get("external_ids").isJsonNull()
+                ? detail.getAsJsonObject("external_ids") : null;
+        if (externalIds == null || !externalIds.has("imdb_id") || externalIds.get("imdb_id").isJsonNull()) return "";
+        return externalIds.get("imdb_id").getAsString();
     }
 
     private void setPosition() {

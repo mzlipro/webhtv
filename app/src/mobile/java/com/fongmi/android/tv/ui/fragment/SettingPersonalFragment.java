@@ -46,6 +46,7 @@ public class SettingPersonalFragment extends BaseFragment {
     protected void initEvent() {
         mBinding.searchThread.setOnClickListener(this::setSearchThread);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
+        mBinding.autoSkipIntroOutro.setOnClickListener(this::setAutoSkipIntroOutro);
         mBinding.tmdbMatchMode.setOnClickListener(this::setTmdbMatchMode);
         mBinding.personalRecommendation.setOnClickListener(this::setPersonalRecommendation);
         mBinding.searchUi.setOnClickListener(this::setSearchUi);
@@ -56,6 +57,7 @@ public class SettingPersonalFragment extends BaseFragment {
     private void setText() {
         mBinding.searchThreadText.setText(String.valueOf(Setting.getSearchThread()));
         mBinding.playBackToDetailText.setText(getSwitch(Setting.isPlayBackToDetail()));
+        mBinding.autoSkipIntroOutroText.setText(getSwitch(Setting.isAutoSkipIntroOutro()));
         mBinding.tmdbMatchModeText.setText((tmdbMatchMode = getResources().getStringArray(R.array.select_tmdb_match_mode))[Setting.getTmdbMatchMode()]);
         mBinding.personalRecommendationText.setText(getSwitch(Setting.isPersonalRecommendation()));
         mBinding.searchUiText.setText((searchUi = getResources().getStringArray(R.array.select_search_ui))[Setting.getSearchUi()]);
@@ -82,6 +84,11 @@ public class SettingPersonalFragment extends BaseFragment {
 
     private void setPlayBackToDetail(View view) {
         Setting.putPlayBackToDetail(!Setting.isPlayBackToDetail());
+        setText();
+    }
+
+    private void setAutoSkipIntroOutro(View view) {
+        Setting.putAutoSkipIntroOutro(!Setting.isAutoSkipIntroOutro());
         setText();
     }
 

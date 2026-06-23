@@ -16,6 +16,7 @@
         android:visibility="gone" />
 
     <View
+        android:id="@+id/videoContextScrim"
         android:layout_width="match_parent"
         android:layout_height="320dp"
         android:layout_below="@id/video"

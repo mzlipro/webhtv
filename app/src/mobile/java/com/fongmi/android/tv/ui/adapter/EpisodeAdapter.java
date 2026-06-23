@@ -1,8 +1,13 @@
 package com.fongmi.android.tv.ui.adapter;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewConfiguration;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -107,13 +112,45 @@ public class EpisodeAdapter extends RecyclerView.Adapter<BaseEpisodeHolder> {
         text.setText(title);
         applyMarquee(text, item.isSelected(), text.hasFocus());
         text.setOnFocusChangeListener((view, hasFocus) -> applyMarquee(text, item.isSelected(), hasFocus));
-        text.setOnLongClickListener(view -> {
-            if (item.getTmdbEpisode() != null) {
-                return EpisodeTitlePopup.show(view, item.getTmdbEpisode());
-            } else {
-                return EpisodeTitlePopup.show(view, title);
+        bindTitlePopup(text, item);
+    }
+
+    public static void bindTitlePopup(View view, Episode item) {
+        if (view == null) return;
+        view.setOnLongClickListener(anchor -> showTitlePopup(anchor, item));
+        view.setOnTouchListener(new View.OnTouchListener() {
+            private final Handler handler = new Handler(Looper.getMainLooper());
+            private final int slop = ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
+            private float downX;
+            private float downY;
+            private boolean shown;
+            private final Runnable show = () -> shown = showTitlePopup(view, item);
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        shown = false;
+                        downX = event.getX();
+                        downY = event.getY();
+                        handler.postDelayed(show, ViewConfiguration.getLongPressTimeout());
+                        return false;
+                    case MotionEvent.ACTION_MOVE:
+                        if (Math.abs(event.getX() - downX) > slop || Math.abs(event.getY() - downY) > slop) handler.removeCallbacks(show);
+                        return false;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        handler.removeCallbacks(show);
+                        return shown;
+                    default:
+                        return false;
+                }
             }
         });
+    }
+
+    public static boolean showTitlePopup(View anchor, Episode item) {
+        return EpisodeTitlePopup.show(anchor, getTitle(item));
     }
 
     public static void dismissTitlePopup() {

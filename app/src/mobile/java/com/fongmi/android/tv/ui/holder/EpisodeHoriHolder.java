@@ -29,6 +29,7 @@ public class EpisodeHoriHolder extends BaseEpisodeHolder {
     @Override
     public void initView(Episode item) {
         TmdbEpisode tmdbEpisode = item.getTmdbEpisode();
+        EpisodeAdapter.bindTitlePopup(binding.getRoot(), item);
 
         if (tmdbEpisode != null) {
             // TMDB 模式：显示卡片，隐藏文本
@@ -38,26 +39,10 @@ public class EpisodeHoriHolder extends BaseEpisodeHolder {
             binding.card.setSelected(item.isSelected());
             binding.card.setOnClickListener(v -> listener.onItemClick(item));
 
-            // 长按显示详细信息对话框
-            binding.card.setOnLongClickListener(v -> {
-                // 手机版暂不支持详细信息对话框,使用简单弹窗
-                String title = EpisodeAdapter.getTitle(item);
-                return com.fongmi.android.tv.ui.custom.EpisodeTitlePopup.show(v, title);
-
-                /* TV版才有EpisodeDetailDialog,手机版暂不支持
-                if (tmdbEpisode.getTmdbId() > 0) {
-                    android.app.Activity activity = getActivity(v);
-                    if (activity != null) {
-                        fetchEpisodePhotosAndShowDialog(activity, tmdbEpisode);
-                    }
-                    return true;
-                } else {
-                    // 无 TMDB ID，显示简单弹窗
-                    String title = item.getDesc().concat(item.getDisplayName());
-                    return com.fongmi.android.tv.ui.custom.EpisodeTitlePopup.show(v, title);
-                }
-                */
-            });
+            EpisodeAdapter.bindTitlePopup(binding.card, item);
+            EpisodeAdapter.bindTitlePopup(binding.still, item);
+            EpisodeAdapter.bindTitlePopup(binding.cardTitle, item);
+            EpisodeAdapter.bindTitlePopup(binding.overview, item);
 
             // 标题
             binding.cardTitle.setText(EpisodeAdapter.getTitle(item));
@@ -97,6 +82,7 @@ public class EpisodeHoriHolder extends BaseEpisodeHolder {
             binding.text.setSelected(item.isSelected());
             binding.text.setText(EpisodeAdapter.getTitle(item));
             binding.text.setOnClickListener(v -> listener.onItemClick(item));
+            EpisodeAdapter.bindTitlePopup(binding.text, item);
         }
     }
 

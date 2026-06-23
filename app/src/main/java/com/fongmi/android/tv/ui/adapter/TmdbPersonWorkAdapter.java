@@ -81,6 +81,14 @@ public class TmdbPersonWorkAdapter extends RecyclerView.Adapter<TmdbPersonWorkAd
         String yearText = subtitle != null ? subtitle.replaceAll("\\s*·\\s*评分\\s*[\\d.]+", "") : "";
         holder.year.setText(yearText);
 
+        String overview = item.getOverview();
+        if (overview != null && !overview.isEmpty()) {
+            holder.overview.setText(overview);
+            holder.overview.setVisibility(View.VISIBLE);
+        } else {
+            holder.overview.setVisibility(View.GONE);
+        }
+
         // 评分角标
         double rating = item.getRating();
         if (rating > 0) {
@@ -131,6 +139,7 @@ public class TmdbPersonWorkAdapter extends RecyclerView.Adapter<TmdbPersonWorkAd
         TextView title;
         TextView character;
         TextView year;
+        TextView overview;
         TextView rating;
         LinearLayout ratingBadge;
 
@@ -144,6 +153,7 @@ public class TmdbPersonWorkAdapter extends RecyclerView.Adapter<TmdbPersonWorkAd
             title = view.findViewById(R.id.title);
             character = view.findViewById(R.id.character);
             year = view.findViewById(R.id.year);
+            overview = view.findViewById(R.id.overview);
             rating = view.findViewById(R.id.rating);
             ratingBadge = view.findViewById(R.id.ratingBadge);
         }

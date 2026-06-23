@@ -1,230 +1,262 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- TMDB 人物详情全屏页面 -->
+<!-- TMDB 人物简介弹窗：融合旧版光影剧幕的暗色面板。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0F141A"
+    android:background="#8F000000"
+    android:clickable="true"
     android:defaultFocusHighlightEnabled="false"
     android:stateListAnimator="@null">
 
-    <!-- 滚动内容 -->
-    <androidx.core.widget.NestedScrollView
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/panel"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:defaultFocusHighlightEnabled="false"
-        android:descendantFocusability="afterDescendants"
-        android:fillViewport="false"
-        android:focusable="false"
-        android:focusableInTouchMode="false"
-        android:stateListAnimator="@null">
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="10dp"
+        app:cardBackgroundColor="#F2101821"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="0dp"
+        app:strokeColor="#33FFFFFF"
+        app:strokeWidth="1dp">
 
-        <LinearLayout
+        <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:fillViewport="true"
+            android:maxHeight="620dp"
+            android:overScrollMode="ifContentScrolls">
 
-            <!-- 头部区域 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="24dp"
-                android:background="#16202A"
-                android:gravity="center_vertical">
+                android:orientation="vertical"
+                android:padding="16dp">
 
-                <!-- 头像 -->
-                <androidx.cardview.widget.CardView
-                    android:layout_width="100dp"
-                    android:layout_height="150dp"
-                    app:cardCornerRadius="8dp"
-                    app:cardElevation="4dp">
-
-                    <ImageView
-                        android:id="@+id/profile"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="#1C2530"
-                        android:scaleType="centerCrop"
-                        android:contentDescription="@null" />
-
-                </androidx.cardview.widget.CardView>
-
-                <!-- 右侧信息 -->
-                <LinearLayout
-                    android:layout_width="0dp"
+                <TextView
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="20dp"
-                    android:orientation="vertical">
+                    android:text="@string/tmdb_cast_label"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
 
-                    <!-- 姓名 -->
-                    <TextView
-                        android:id="@+id/name"
-                        android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="118dp"
+                        android:layout_height="160dp"
+                        app:cardBackgroundColor="#25313D"
+                        app:cardCornerRadius="8dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#33FFFFFF"
+                        app:strokeWidth="1dp">
+
+                        <ImageView
+                            android:id="@+id/profile"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="#25313D"
+                            android:contentDescription="@null"
+                            android:scaleType="centerCrop"
+                            tools:src="@color/black" />
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:textColor="@android:color/white"
-                        android:textSize="26sp"
-                        android:textStyle="bold"
-                        tools:text="陈都灵" />
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
 
-                    <!-- 英文名 -->
+                        <TextView
+                            android:id="@+id/name"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:maxLines="2"
+                            android:textColor="@android:color/white"
+                            android:textSize="24sp"
+                            android:textStyle="bold"
+                            tools:text="陈都灵" />
+
+                        <TextView
+                            android:id="@+id/role"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:maxLines="3"
+                            android:textColor="#B3FFFFFF"
+                            android:textSize="13sp"
+                            tools:text="饰 楚昭" />
+
+                        <TextView
+                            android:id="@+id/stats"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="18dp"
+                            android:lineSpacingExtra="3dp"
+                            android:textColor="#99FFFFFF"
+                            android:textSize="12sp"
+                            android:visibility="gone"
+                            tools:text="参与 54 部作品 · 平均 6.8 分"
+                            tools:visibility="visible" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/biographySection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
                     <TextView
-                        android:id="@+id/role"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="简介"
+                        android:textColor="@android:color/white"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/biographyCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        app:cardBackgroundColor="#261C2833"
+                        app:cardCornerRadius="8dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#1FFFFFFF"
+                        app:strokeWidth="1dp">
+
+                        <TextView
+                            android:id="@+id/biography"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:lineSpacingExtra="4dp"
+                            android:maxLines="8"
+                            android:padding="12dp"
+                            android:textColor="#DDEAF2F8"
+                            android:textSize="13sp"
+                            tools:text="演员简介..." />
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/filterSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="参与作品"
+                            android:textColor="@android:color/white"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/departmentChips"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        app:selectionRequired="true"
+                        app:singleSelection="true" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/mediaChips"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:textColor="#999999"
-                        android:textSize="15sp"
-                        tools:text="Chu Zhao" />
+                        app:selectionRequired="true"
+                        app:singleSelection="true" />
 
-                    <!-- 统计信息（作品数、平均分等） -->
+                </LinearLayout>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/worksRecycler"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clipToPadding="false"
+                    android:descendantFocusability="afterDescendants"
+                    android:nestedScrollingEnabled="false"
+                    android:overScrollMode="never"
+                    android:paddingEnd="2dp"
+                    android:visibility="gone"
+                    tools:listitem="@layout/item_tmdb_person_work"
+                    tools:visibility="visible" />
+
+                <LinearLayout
+                    android:id="@+id/photosSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
                     <TextView
-                        android:id="@+id/stats"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:textColor="#CCCCCC"
-                        android:textSize="14sp"
-                        android:visibility="gone"
-                        tools:text="参演 54 部作品 · 平均 6.8 分"
-                        tools:visibility="visible" />
+                        android:text="照片"
+                        android:textColor="@android:color/white"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/photosRecycler"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:clipToPadding="false"
+                        android:descendantFocusability="afterDescendants"
+                        android:overScrollMode="never"
+                        android:paddingEnd="2dp"
+                        tools:listitem="@layout/item_tmdb_person_photo" />
 
                 </LinearLayout>
 
             </LinearLayout>
 
-            <!-- 照片轮播 -->
-            <LinearLayout
-                android:id="@+id/photosSection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="16dp"
-                android:visibility="gone">
+        </androidx.core.widget.NestedScrollView>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="24dp"
-                    android:text="照片"
-                    android:textColor="@android:color/white"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+    </com.google.android.material.card.MaterialCardView>
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/photosRecycler"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:paddingStart="16dp"
-                    android:paddingEnd="16dp"
-                    android:clipToPadding="false"
-                    android:descendantFocusability="afterDescendants" />
-
-            </LinearLayout>
-
-            <!-- 简介 -->
-            <LinearLayout
-                android:id="@+id/biographySection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="20dp"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="24dp"
-                    android:text="简介"
-                    android:textColor="@android:color/white"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/biography"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="24dp"
-                    android:layout_marginTop="12dp"
-                    android:layout_marginEnd="24dp"
-                    android:textColor="@android:color/white"
-                    android:textSize="14sp"
-                    android:lineSpacingMultiplier="1.4"
-                    android:maxLines="8"
-                    android:ellipsize="end"
-                    tools:text="演员简介..." />
-
-            </LinearLayout>
-
-            <!-- 作品筛选标签 -->
-            <LinearLayout
-                android:id="@+id/filterSection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="20dp"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="24dp"
-                    android:text="参与作品"
-                    android:textColor="@android:color/white"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/departmentChips"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    app:selectionRequired="true"
-                    app:singleSelection="true" />
-
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/mediaChips"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    app:selectionRequired="true"
-                    app:singleSelection="true" />
-
-            </LinearLayout>
-
-            <!-- 作品列表 -->
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/worksRecycler"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:paddingBottom="24dp"
-                android:clipToPadding="false"
-                android:descendantFocusability="afterDescendants"
-                android:nestedScrollingEnabled="false"
-                android:visibility="gone"
-                tools:listitem="@layout/item_tmdb_person_work" />
-
-        </LinearLayout>
-
-    </androidx.core.widget.NestedScrollView>
-
-    <!-- 关闭按钮 -->
     <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/closeBtn"
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:layout_gravity="top|end"
-        android:layout_margin="16dp"
+        android:layout_margin="18dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:padding="12dp"
         android:src="@drawable/ic_audio_close"

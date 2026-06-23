@@ -25,6 +25,7 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
 
     private final List<TmdbItem> items = new ArrayList<>();
     private OnItemClickListener listener;
+    private boolean cinema;
 
     public interface OnItemClickListener {
         void onItemClick(TmdbItem item);
@@ -37,6 +38,12 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
     public void setItems(List<TmdbItem> recommendations) {
         items.clear();
         if (recommendations != null) items.addAll(recommendations);
+        notifyDataSetChanged();
+    }
+
+    public void setCinema(boolean cinema) {
+        if (this.cinema == cinema) return;
+        this.cinema = cinema;
         notifyDataSetChanged();
     }
 
@@ -77,12 +84,18 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.adapter_tmdb_recommendation, parent, false));
+        int layout = viewType == 1 ? R.layout.adapter_tmdb_recommendation_landscape : R.layout.adapter_tmdb_recommendation;
+        return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(layout, parent, false));
     }
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        holder.bind(items.get(position), listener);
+        holder.bind(items.get(position), listener, cinema);
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        return cinema ? 1 : 0;
     }
 
     @Override
@@ -94,6 +107,7 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
 
         private final ImageView poster;
         private final TextView title;
+        private final TextView subtitle;
         private final TextView rating;
 
         public ViewHolder(@NonNull View itemView) {
@@ -104,18 +118,25 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
             }
             poster = itemView.findViewById(R.id.poster);
             title = itemView.findViewById(R.id.title);
+            subtitle = itemView.findViewById(R.id.subtitle);
             rating = itemView.findViewById(R.id.rating);
         }
 
-        void bind(TmdbItem item, OnItemClickListener listener) {
+        void bind(TmdbItem item, OnItemClickListener listener, boolean cinema) {
             title.setText(item.getTitle());
+            if (subtitle != null) {
+                String value = recommendationSubtitle(item.getSubtitle());
+                subtitle.setText(value);
+                subtitle.setVisibility(value.isEmpty() ? View.GONE : View.VISIBLE);
+            }
 
-            if (item.getPosterUrl() != null && !item.getPosterUrl().isEmpty()) {
+            String image = cinema && item.getBackdropUrl() != null && !item.getBackdropUrl().isEmpty() ? item.getBackdropUrl() : item.getPosterUrl();
+            if (image != null && !image.isEmpty()) {
                 Glide.with(poster.getContext())
-                        .load(item.getPosterUrl())
-                        .override(300, 450)   // 限制加载尺寸
-                        .thumbnail(0.1f)      // 缩略图
-                        .dontAnimate()        // 禁用动画
+                        .load(image)
+                        .override(cinema ? 552 : 300, cinema ? 312 : 450)
+                        .thumbnail(0.1f)
+                        .dontAnimate()
                         .into(poster);
             } else {
                 poster.setImageResource(R.color.black);
@@ -132,6 +153,20 @@ public class TmdbRecommendationAdapter extends RecyclerView.Adapter<TmdbRecommen
             if (listener != null) {
                 itemView.setOnClickListener(v -> listener.onItemClick(item));
             }
+        }
+
+        private String recommendationSubtitle(String subtitle) {
+            if (subtitle == null || subtitle.isEmpty()) return "";
+            List<String> meta = new ArrayList<>();
+            for (String raw : subtitle.split("[·•/、,，]")) {
+                String value = raw == null ? "" : raw.trim();
+                if (value.isEmpty()) continue;
+                String lower = value.toLowerCase(Locale.ROOT);
+                if (value.startsWith("评分") || lower.startsWith("score")) continue;
+                meta.add(value);
+                if (meta.size() >= 2) break;
+            }
+            return String.join(" · ", meta);
         }
     }
 }

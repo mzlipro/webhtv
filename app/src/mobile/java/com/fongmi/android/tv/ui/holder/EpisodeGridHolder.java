@@ -38,10 +38,13 @@ public class EpisodeGridHolder extends BaseEpisodeHolder {
         binding.card.setVisibility(View.VISIBLE);
         binding.card.setSelected(item.isSelected());
         binding.card.setOnClickListener(v -> listener.onItemClick(item));
-        binding.card.setOnLongClickListener(view -> {
-            if (item.getTmdbEpisode() != null) return com.fongmi.android.tv.ui.custom.EpisodeTitlePopup.show(view, item.getTmdbEpisode());
-            return com.fongmi.android.tv.ui.custom.EpisodeTitlePopup.show(view, EpisodeAdapter.getTitle(item));
-        });
+        EpisodeAdapter.bindTitlePopup(binding.getRoot(), item);
+        EpisodeAdapter.bindTitlePopup(binding.card, item);
+        EpisodeAdapter.bindTitlePopup(binding.imageFrame, item);
+        EpisodeAdapter.bindTitlePopup(binding.still, item);
+        EpisodeAdapter.bindTitlePopup(binding.textPanel, item);
+        EpisodeAdapter.bindTitlePopup(binding.cardTitle, item);
+        EpisodeAdapter.bindTitlePopup(binding.overview, item);
 
         binding.cardTitle.setText(EpisodeAdapter.getTitle(item));
         binding.cardTitle.setSelected(item.isSelected());

@@ -17,6 +17,7 @@ import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Diffable;
+import com.fongmi.android.tv.setting.PlayerSetting;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 
@@ -69,6 +70,7 @@ public class History implements Diffable<History> {
     @SerializedName("cid")
     private int cid;
 
+    private transient int player = PlayerSetting.NONE;
     private transient long updateTime;
 
     public History() {
@@ -99,6 +101,7 @@ public class History implements Diffable<History> {
         item.speed = speed;
         item.scale = scale;
         item.cid = cid;
+        item.player = player;
         item.updateTime = updateTime;
         return item;
     }
@@ -284,6 +287,22 @@ public class History implements Diffable<History> {
 
     public void setScale(int scale) {
         this.scale = scale;
+    }
+
+    public int getPlayer() {
+        return player;
+    }
+
+    public int getPlayerOrDefault() {
+        return PlayerSetting.resolvePlayer(player);
+    }
+
+    public boolean hasPlayer() {
+        return PlayerSetting.isPlayer(player);
+    }
+
+    public void setPlayer(int player) {
+        this.player = PlayerSetting.sanitizePlayer(player);
     }
 
     public int getCid() {

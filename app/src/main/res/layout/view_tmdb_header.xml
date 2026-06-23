@@ -15,10 +15,113 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     android:background="#0F141A">
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/tmdbFusionInfoCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="#AFFFFFFF"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="0dp"
+        app:strokeColor="#33424B57"
+        app:strokeWidth="1dp"
+        tools:visibility="visible">
+
+        <androidx.appcompat.widget.LinearLayoutCompat
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="16dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="112dp"
+                android:layout_height="160dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="#30FFFFFF"
+                app:strokeWidth="1dp">
+
+                <ImageView
+                    android:id="@+id/tmdbFusionPoster"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@null"
+                    android:scaleType="centerCrop"
+                    tools:src="@color/black" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <androidx.appcompat.widget.LinearLayoutCompat
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/tmdbFusionTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:textColor="#12202D"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    tools:text="爱情有烟火" />
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/tmdbFusionSubtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="#CC12202D"
+                    android:textSize="14sp"
+                    tools:text="2026-06-15 · 评分 8.5" />
+
+                <com.google.android.flexbox.FlexboxLayout
+                    android:id="@+id/tmdbFusionMeta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    app:flexWrap="wrap" />
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/tmdbFusionSource"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="#9912202D"
+                    android:textSize="12sp"
+                    tools:text="当前站源：荐片[APP]" />
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/tmdbFusionOverview"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:ellipsize="end"
+                    android:lineSpacingExtra="3dp"
+                    android:maxLines="5"
+                    android:textColor="#E612202D"
+                    android:textSize="13sp"
+                    tools:text="投行小职员钱菲，原本沉浸在对人生的幸福规划中，但没想到，未婚夫汪若海选择了不再与她同行。" />
+
+            </androidx.appcompat.widget.LinearLayoutCompat>
+
+        </androidx.appcompat.widget.LinearLayoutCompat>
+
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- 背景图 + 海报 + 标题区 -->
     <FrameLayout
+        android:id="@+id/tmdbNativeHero"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
@@ -169,6 +272,7 @@
         tools:visibility="visible" />
 
     <HorizontalScrollView
+        android:id="@+id/tmdbActionsScroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:fillViewport="false"

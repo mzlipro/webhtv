@@ -27,6 +27,10 @@ public class Task {
         return largeExecutor;
     }
 
+    public static ListeningExecutorService searchExecutor() {
+        return largeExecutor;
+    }
+
     public static ScheduledExecutorService scheduler() {
         return scheduler;
     }

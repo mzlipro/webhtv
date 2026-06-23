@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.ui.adapter;
 
 import android.view.LayoutInflater;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 
@@ -20,14 +21,32 @@ import java.util.List;
 public class TmdbPhotoAdapter extends RecyclerView.Adapter<TmdbPhotoAdapter.ViewHolder> {
 
     private final List<String> items = new ArrayList<>();
+    private Listener legacyListener;
     private OnItemClickListener listener;
+    private boolean legacyMode;
 
     public interface OnItemClickListener {
         void onItemClick(String url, int position);
     }
 
+    public interface Listener {
+        void onItemClick(int position, String url);
+    }
+
+    public TmdbPhotoAdapter() {
+    }
+
+    public TmdbPhotoAdapter(Listener listener) {
+        this.legacyListener = listener;
+        this.legacyMode = true;
+    }
+
     public void setOnItemClickListener(OnItemClickListener listener) {
         this.listener = listener;
+    }
+
+    public void setLight(boolean light) {
+        legacyMode = true;
     }
 
     public void setItems(List<String> photos) {
@@ -43,7 +62,7 @@ public class TmdbPhotoAdapter extends RecyclerView.Adapter<TmdbPhotoAdapter.View
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.adapter_tmdb_photo, parent, false));
+        return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.adapter_tmdb_photo, parent, false), legacyMode);
     }
 
     @Override
@@ -69,6 +88,15 @@ public class TmdbPhotoAdapter extends RecyclerView.Adapter<TmdbPhotoAdapter.View
             photo = itemView.findViewById(R.id.photo);
         }
 
+        public ViewHolder(@NonNull android.view.View itemView, boolean legacyMode) {
+            super(itemView);
+            if (!legacyMode && !Util.isLeanback()) {
+                itemView.setFocusable(false);
+                itemView.setFocusableInTouchMode(false);
+            }
+            photo = itemView.findViewById(R.id.photo);
+        }
+
         void bind(String url, int position, OnItemClickListener listener) {
             if (url != null && !url.isEmpty()) {
                 Glide.with(photo.getContext()).load(url).into(photo);
@@ -80,5 +108,16 @@ public class TmdbPhotoAdapter extends RecyclerView.Adapter<TmdbPhotoAdapter.View
                 itemView.setOnClickListener(v -> listener.onItemClick(url, position));
             }
         }
+    }
+
+    @Override
+    public void onViewAttachedToWindow(@NonNull ViewHolder holder) {
+        super.onViewAttachedToWindow(holder);
+        if (!legacyMode) return;
+        holder.itemView.setOnClickListener(view -> {
+            int position = holder.getBindingAdapterPosition();
+            if (position == RecyclerView.NO_POSITION || legacyListener == null) return;
+            legacyListener.onItemClick(position, items.get(position));
+        });
     }
 }

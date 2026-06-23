@@ -46,7 +46,8 @@ public class SettingEnhanceActivity extends BaseActivity {
 
     private static final String URL_GITHUB = "https://github.com/fish2018/webhtv";
     private static final String URL_CNB = "https://cnb.cool/fish2018/ext";
-    private static final int[] DETAIL_INTERACTION_MODES = {Setting.DETAIL_INTERACTION_ORIGINAL, Setting.DETAIL_INTERACTION_SYSTEM};
+    private static final int[] DETAIL_OPEN_MODES = {Setting.DETAIL_OPEN_ORIGINAL_ENHANCED, Setting.DETAIL_OPEN_FUSION, Setting.DETAIL_OPEN_ENHANCED, Setting.DETAIL_OPEN_PLAYER, Setting.DETAIL_OPEN_DIRECT};
+    private static final int[] DETAIL_THEME_MODES = {Setting.DETAIL_STYLE_NATIVE, Setting.DETAIL_STYLE_PROFILE, Setting.DETAIL_STYLE_CINEMA};
 
     private ActivitySettingEnhanceBinding mBinding;
 
@@ -68,7 +69,6 @@ public class SettingEnhanceActivity extends BaseActivity {
         reorderItems();
         mBinding.customCsp.requestFocus();
         mBinding.tmdbModel.setVisibility(View.GONE);
-        mBinding.detailThemeMode.setVisibility(View.GONE);
         setText();
     }
 
@@ -80,7 +80,8 @@ public class SettingEnhanceActivity extends BaseActivity {
         mBinding.audioSource.setOnClickListener(this::setAudioSource);
         mBinding.shortDramaSource.setOnClickListener(this::setShortDramaSource);
         mBinding.tmdbSource.setOnClickListener(this::setTmdbSource);
-        mBinding.detailInteractionMode.setOnClickListener(this::setDetailInteractionMode);
+        mBinding.detailInteractionMode.setOnClickListener(this::setDetailOpenMode);
+        mBinding.detailThemeMode.setOnClickListener(this::setDetailThemeMode);
         mBinding.debugLog.setOnClickListener(this::setDebugLog);
         mBinding.siteHealthSort.setOnClickListener(view -> SiteHealthDialog.show(this, this::setText));
         mBinding.siteHealthSort.setOnLongClickListener(this::clearSiteHealth);
@@ -139,7 +140,9 @@ public class SettingEnhanceActivity extends BaseActivity {
         mBinding.audioSourceText.setText(getSwitch(!AudioConfig.objectFrom(Setting.getAudioConfig()).getDisplayRules().isEmpty()));
         mBinding.shortDramaSourceText.setText(getSwitch(!ShortDramaConfig.objectFrom(Setting.getShortDramaConfig()).getDisplayRules().isEmpty()));
         mBinding.tmdbSourceText.setText(Setting.isTmdbReady() ? R.string.setting_configured : R.string.setting_unconfigured);
-        mBinding.detailInteractionModeText.setText(getDetailInteractionModeText());
+        mBinding.detailInteractionModeText.setText(getDetailOpenModeText());
+        mBinding.detailThemeMode.setVisibility(Setting.isTmdbMode(Setting.getDetailOpenMode()) ? View.VISIBLE : View.GONE);
+        mBinding.detailThemeModeText.setText(getDetailThemeModeText());
         mBinding.debugLogText.setText(getSwitch(Setting.isDebugLog()));
         mBinding.siteHealthSortText.setText(getSwitch(Setting.isSiteHealthSort()));
         WebHomeExtensionRegistry.Snapshot webHomeExtension = WebHomeExtensionRegistry.get().snapshot();
@@ -185,32 +188,64 @@ public class SettingEnhanceActivity extends BaseActivity {
         TmdbSourceDialog.create(this).onDismiss(this::setText).show();
     }
 
-    private String getDetailInteractionModeText() {
-        String[] labels = getDetailInteractionModes();
-        int mode = Setting.getDetailInteractionMode();
-        for (int i = 0; i < DETAIL_INTERACTION_MODES.length; i++) if (DETAIL_INTERACTION_MODES[i] == mode) return labels[i];
+    private String getDetailOpenModeText() {
+        String[] labels = getDetailOpenModes();
+        int mode = Setting.getDetailOpenMode();
+        for (int i = 0; i < DETAIL_OPEN_MODES.length; i++) if (DETAIL_OPEN_MODES[i] == mode) return labels[i];
         return labels[0];
     }
 
-    private String[] getDetailInteractionModes() {
-        return new String[]{getString(R.string.setting_detail_open_original), getString(R.string.setting_detail_open_native)};
+    private String[] getDetailOpenModes() {
+        return new String[]{getString(R.string.setting_detail_open_original_enhanced), getString(R.string.setting_detail_open_fusion), getString(R.string.setting_detail_open_enhanced), getString(R.string.setting_detail_open_player), getString(R.string.setting_detail_open_direct)};
     }
 
-    private void setDetailInteractionMode(View view) {
-        new MaterialAlertDialogBuilder(this).setTitle(R.string.setting_detail_open_mode).setNegativeButton(R.string.dialog_negative, null).setSingleChoiceItems(getDetailInteractionModes(), getDetailInteractionModeIndex(), (dialog, which) -> {
-            Setting.putDetailInteractionMode(DETAIL_INTERACTION_MODES[which]);
+    private String getDetailThemeModeText() {
+        String[] labels = getDetailThemeModes();
+        int mode = Setting.getTmdbDetailStyle();
+        for (int i = 0; i < DETAIL_THEME_MODES.length; i++) if (DETAIL_THEME_MODES[i] == mode) return labels[i];
+        return labels[0];
+    }
+
+    private String[] getDetailThemeModes() {
+        return new String[]{getString(R.string.setting_detail_theme_native), getString(R.string.setting_detail_theme_profile), getString(R.string.setting_detail_theme_cinema)};
+    }
+
+    private void setDetailOpenMode(View view) {
+        new MaterialAlertDialogBuilder(this).setTitle(R.string.setting_detail_open_mode).setNegativeButton(R.string.dialog_negative, null).setSingleChoiceItems(getDetailOpenModes(), getDetailOpenModeIndex(), (dialog, which) -> {
+            int mode = DETAIL_OPEN_MODES[which];
+            if (Setting.isTmdbMode(mode) && !Setting.isTmdbReady()) {
+                dialog.dismiss();
+                Notify.show(R.string.detail_tmdb_need_key);
+                TmdbSourceDialog.create(this).onDismiss(() -> {
+                    if (Setting.isTmdbReady()) Setting.putDetailOpenMode(mode);
+                    setText();
+                }).show();
+                return;
+            }
+            Setting.putDetailOpenMode(mode);
             setText();
             dialog.dismiss();
-            if (DETAIL_INTERACTION_MODES[which] == Setting.DETAIL_INTERACTION_SYSTEM && !Setting.isTmdbReady()) {
-                Notify.show(R.string.detail_tmdb_need_key);
-                TmdbSourceDialog.create(this).onDismiss(this::setText).show();
-            }
         }).show();
     }
 
-    private int getDetailInteractionModeIndex() {
-        int mode = Setting.getDetailInteractionMode();
-        for (int i = 0; i < DETAIL_INTERACTION_MODES.length; i++) if (DETAIL_INTERACTION_MODES[i] == mode) return i;
+    private int getDetailOpenModeIndex() {
+        int mode = Setting.getDetailOpenMode();
+        for (int i = 0; i < DETAIL_OPEN_MODES.length; i++) if (DETAIL_OPEN_MODES[i] == mode) return i;
+        return 0;
+    }
+
+    private void setDetailThemeMode(View view) {
+        if (!Setting.isTmdbMode(Setting.getDetailOpenMode())) return;
+        new MaterialAlertDialogBuilder(this).setTitle(R.string.setting_detail_theme_mode).setNegativeButton(R.string.dialog_negative, null).setSingleChoiceItems(getDetailThemeModes(), getDetailThemeModeIndex(), (dialog, which) -> {
+            Setting.putTmdbDetailStyle(DETAIL_THEME_MODES[which]);
+            setText();
+            dialog.dismiss();
+        }).show();
+    }
+
+    private int getDetailThemeModeIndex() {
+        int mode = Setting.getTmdbDetailStyle();
+        for (int i = 0; i < DETAIL_THEME_MODES.length; i++) if (DETAIL_THEME_MODES[i] == mode) return i;
         return 0;
     }
 

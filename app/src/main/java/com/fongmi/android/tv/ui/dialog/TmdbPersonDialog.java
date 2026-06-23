@@ -2,6 +2,7 @@ package com.fongmi.android.tv.ui.dialog;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -14,7 +15,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -143,6 +143,7 @@ public class TmdbPersonDialog {
         mediaChips = view.findViewById(R.id.mediaChips);
         View closeBtn = view.findViewById(R.id.closeBtn);
 
+        applyPanelSize(view);
         name.setText(person.getName());
         role.setText(person.getSubtitle());
 
@@ -162,10 +163,10 @@ public class TmdbPersonDialog {
         photosRecycler.setAdapter(photoAdapter);
         photosRecycler.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
 
-        // 设置作品列表（双列网格，懒加载）
+        // 设置作品列表（旧版纵向信息卡，懒加载）
         workAdapter = new TmdbPersonWorkAdapter(this::onWorkClick);
-        GridLayoutManager gridLayoutManager = new GridLayoutManager(activity, 2);
-        worksRecycler.setLayoutManager(gridLayoutManager);
+        LinearLayoutManager workLayoutManager = new LinearLayoutManager(activity);
+        worksRecycler.setLayoutManager(workLayoutManager);
         worksRecycler.setAdapter(workAdapter);
         worksRecycler.setHasFixedSize(false);
         worksRecycler.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
@@ -173,9 +174,9 @@ public class TmdbPersonDialog {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 if (dy <= 0) return;
-                int total = gridLayoutManager.getItemCount();
-                int visible = gridLayoutManager.getChildCount();
-                int first = gridLayoutManager.findFirstVisibleItemPosition();
+                int total = workLayoutManager.getItemCount();
+                int visible = workLayoutManager.getChildCount();
+                int first = workLayoutManager.findFirstVisibleItemPosition();
                 if (first + visible >= total - 4) {
                     loadMoreWorks();
                 }
@@ -188,6 +189,16 @@ public class TmdbPersonDialog {
         } else {
             closeBtn.setOnClickListener(v -> dialog.dismiss());
         }
+    }
+
+    private void applyPanelSize(View view) {
+        View panel = view.findViewById(R.id.panel);
+        if (panel == null) return;
+        ViewGroup.LayoutParams params = panel.getLayoutParams();
+        int width = activity.getResources().getDisplayMetrics().widthPixels;
+        float ratio = width >= 1200 ? 0.78f : 0.94f;
+        params.width = (int) (width * ratio);
+        panel.setLayoutParams(params);
     }
 
     /**
@@ -290,6 +301,7 @@ public class TmdbPersonDialog {
             chip.setCheckable(true);
             chip.setChecked(option.key().equals(current));
             chip.setOnClickListener(v -> callback.onFilter(option.key()));
+            applyDarkChipStyle(chip);
             if (Util.isLeanback()) {
                 chip.setFocusable(true);
                 chip.setOnFocusChangeListener((v, hasFocus) -> {
@@ -303,6 +315,18 @@ public class TmdbPersonDialog {
             }
             group.addView(chip);
         }
+    }
+
+    private void applyDarkChipStyle(Chip chip) {
+        int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{android.R.attr.state_focused},
+                new int[]{}
+        };
+        chip.setChipBackgroundColor(new ColorStateList(states, new int[]{0xFFEAF2F8, 0x33FFFFFF, 0x00000000}));
+        chip.setTextColor(new ColorStateList(states, new int[]{0xFF101820, 0xFFFFFFFF, 0xFFFFFFFF}));
+        chip.setChipStrokeColor(new ColorStateList(states, new int[]{0xFFEAF2F8, 0x66FFFFFF, 0x33FFFFFF}));
+        chip.setChipStrokeWidth(1f);
     }
 
     /**

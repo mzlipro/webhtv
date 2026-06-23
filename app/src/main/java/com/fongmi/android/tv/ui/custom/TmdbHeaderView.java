@@ -1,6 +1,8 @@
 package com.fongmi.android.tv.ui.custom;
 
 import android.app.Activity;
+import android.content.res.Configuration;
+import android.content.res.ColorStateList;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -8,18 +10,22 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.TmdbItem;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.service.PersonalRecommendationService;
 import com.fongmi.android.tv.ui.adapter.TmdbCastAdapter;
 import com.fongmi.android.tv.ui.helper.TmdbUIAdapter;
 import com.fongmi.android.tv.ui.helper.TmdbNavigation;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.google.android.flexbox.FlexboxLayout;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -43,6 +49,26 @@ import java.util.Locale;
 public class TmdbHeaderView {
 
     private static final int OMDB_FULL_RATING_TEXT_MAX_LENGTH = 14;
+    private static final int COLOR_NATIVE_BACKGROUND = 0xFF0F141A;
+    private static final int COLOR_CINEMA_BACKGROUND = 0xFF0F141A;
+    private static final int COLOR_PROFILE_BACKGROUND = 0xFFEAF5F1;
+    private static final int COLOR_FUSION_BACKDROP_TEXT = 0xFFFFFFFF;
+    private static final int COLOR_FUSION_BACKDROP_TEXT_SECONDARY = 0xE6FFFFFF;
+    private static final int COLOR_FUSION_BACKDROP_WATERMARK = 0x99FFFFFF;
+    private static final int COLOR_FUSION_LINK_RATING = 0xFFFFD35C;
+    private static final int COLOR_FUSION_LINK_ICON = 0xD9FFFFFF;
+    private static final int COLOR_FUSION_LINK_ICON_BACKGROUND = 0x66000000;
+    private static final int COLOR_FUSION_TEXT_SHADOW = 0xB0000000;
+    private static final int[] BACKDROP_SECTION_LABELS = {
+            R.id.tmdbCastLabel,
+            R.id.tmdbCrewLabel,
+            R.id.tmdbPhotosLabel,
+            R.id.tmdbExternalLinksLabel,
+            R.id.tmdbRecommendationsLabel,
+            R.id.tmdbPersonalTmdbRecommendationsLabel,
+            R.id.tmdbPersonalDoubanRecommendationsLabel,
+            R.id.tmdbOmdbRatingsLabel
+    };
 
     /**
      * 内容渲染完成回调接口
@@ -109,6 +135,10 @@ public class TmdbHeaderView {
         return headerRoot;
     }
 
+    public static int getThemeBackgroundColor() {
+        return Setting.isTmdbNativeStyle() || Setting.isTmdbCinemaStyle() ? COLOR_NATIVE_BACKGROUND : COLOR_PROFILE_BACKGROUND;
+    }
+
     /**
      * 注入头部面板到滚动区顶部（仅调用一次）。
      */
@@ -120,6 +150,7 @@ public class TmdbHeaderView {
         headerRoot.setVisibility(View.GONE);
         setupRecyclerViews();
         setupActions();
+        applyTheme();
     }
 
     public void setKeepSelected(boolean selected) {
@@ -148,6 +179,7 @@ public class TmdbHeaderView {
 
         android.util.Log.d("TmdbHeaderView", "bind() 开始，标题=" + item.getTitle());
         boundAdapter = adapter;
+        applyTheme();
 
         // 背景图（backdrop）- 改为幻灯片模式
         backdropView = headerRoot.findViewById(R.id.tmdbBackdrop);
@@ -158,11 +190,15 @@ public class TmdbHeaderView {
         String posterUrl = item.getPosterUrl();
         if (!TextUtils.isEmpty(posterUrl)) {
             Glide.with(activity).load(posterUrl).into(poster);
+            ImageView fusionPoster = headerRoot.findViewById(R.id.tmdbFusionPoster);
+            if (fusionPoster != null) Glide.with(activity).load(posterUrl).into(fusionPoster);
         }
 
         // 标题
         TextView title = headerRoot.findViewById(R.id.tmdbTitle);
         title.setText(item.getTitle());
+        TextView fusionTitle = headerRoot.findViewById(R.id.tmdbFusionTitle);
+        if (fusionTitle != null) fusionTitle.setText(item.getTitle());
 
         // 评分徽章（隐藏，已在简介上方显示详细评分）
         TextView rating = headerRoot.findViewById(R.id.tmdbRating);
@@ -177,6 +213,8 @@ public class TmdbHeaderView {
         ViewGroup.MarginLayoutParams metaParams = (ViewGroup.MarginLayoutParams) meta.getLayoutParams();
         metaParams.setMarginStart(0);
         meta.setLayoutParams(metaParams);
+        TextView fusionSubtitle = headerRoot.findViewById(R.id.tmdbFusionSubtitle);
+        if (fusionSubtitle != null) fusionSubtitle.setText(buildFusionSubtitle(detail, adapter.getRatingText()));
 
         // 类型标签
         TextView genres = headerRoot.findViewById(R.id.tmdbGenres);
@@ -204,6 +242,7 @@ public class TmdbHeaderView {
         } else {
             overview.setVisibility(View.GONE);
         }
+        bindFusionPanel(adapter, item, detail, overviewText);
 
         // 演员
         if (!adapter.getCast().isEmpty()) {
@@ -257,6 +296,7 @@ public class TmdbHeaderView {
         bindRecommendationRow(R.id.tmdbPersonalDoubanRecommendationsLabel, R.id.tmdbPersonalDoubanRecommendations, personalDoubanRecommendationAdapter, adapter.getPersonalDoubanRecommendations());
 
         // 内容填充完成，显示头部容器
+        applyTheme();
         headerRoot.setVisibility(View.VISIBLE);
 
         // bind 完成，通知监听器
@@ -436,6 +476,100 @@ public class TmdbHeaderView {
         if (!detail.has(dateField) || detail.get(dateField).isJsonNull()) return "";
         String date = detail.get(dateField).getAsString();
         if (date.length() >= 4) return date.substring(0, 4);
+        return "";
+    }
+
+    private String extractDate(JsonObject detail) {
+        if (detail == null) return "";
+        String dateField = detail.has("release_date") ? "release_date" : "first_air_date";
+        if (!detail.has(dateField) || detail.get(dateField).isJsonNull()) return "";
+        return detail.get(dateField).getAsString();
+    }
+
+    private String buildFusionSubtitle(JsonObject detail, String rating) {
+        String date = extractDate(detail);
+        if (TextUtils.isEmpty(rating)) return date;
+        return TextUtils.isEmpty(date) ? "评分 " + rating : date + " · 评分 " + rating;
+    }
+
+    private void bindFusionPanel(TmdbUIAdapter adapter, TmdbItem item, JsonObject detail, String overviewText) {
+        if (headerRoot == null) return;
+        TextView overview = headerRoot.findViewById(R.id.tmdbFusionOverview);
+        if (overview != null) {
+            overview.setText(overviewText);
+            overview.setVisibility(TextUtils.isEmpty(overviewText) ? View.GONE : View.VISIBLE);
+            overview.setOnClickListener(v -> overview.setMaxLines(overview.getMaxLines() == 5 ? Integer.MAX_VALUE : 5));
+        }
+        TextView source = headerRoot.findViewById(R.id.tmdbFusionSource);
+        if (source != null) {
+            String siteName = currentSite() == null ? "" : currentSite().getName();
+            source.setText(TextUtils.isEmpty(siteName) ? "" : "当前站源： " + siteName);
+            source.setVisibility(TextUtils.isEmpty(siteName) ? View.GONE : View.VISIBLE);
+        }
+        FlexboxLayout meta = headerRoot.findViewById(R.id.tmdbFusionMeta);
+        if (meta != null) {
+            meta.removeAllViews();
+            addFusionChip(meta, "tv".equals(item.getMediaType()) ? "剧集" : "电影");
+            addFusionChip(meta, extractYear(detail));
+            addFusionChips(meta, adapter.getGenresText(), 3);
+            addFusionChip(meta, firstCountry(detail));
+            addFusionChip(meta, firstCreator(detail));
+            meta.setVisibility(meta.getChildCount() == 0 ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void addFusionChips(FlexboxLayout container, String text, int limit) {
+        if (TextUtils.isEmpty(text)) return;
+        String[] values = text.split("[·•/、,，]");
+        int count = 0;
+        for (String value : values) {
+            String chip = value == null ? "" : value.trim();
+            if (TextUtils.isEmpty(chip)) continue;
+            addFusionChip(container, chip);
+            if (++count >= limit) break;
+        }
+    }
+
+    private void addFusionChip(FlexboxLayout container, String text) {
+        if (container == null || TextUtils.isEmpty(text)) return;
+        boolean dark = Setting.isFusionDetailPage() ? isDarkDetailTheme() : Setting.isTmdbCinemaStyle() || Setting.isTmdbNativeStyle();
+        com.google.android.material.textview.MaterialTextView chip = new com.google.android.material.textview.MaterialTextView(activity);
+        chip.setText(text.trim());
+        chip.setTextColor(dark ? 0xE6FFFFFF : 0xFF12202D);
+        chip.setTextSize(12);
+        chip.setSingleLine(true);
+        chip.setIncludeFontPadding(false);
+        chip.setPadding(ResUtil.dp2px(8), ResUtil.dp2px(5), ResUtil.dp2px(8), ResUtil.dp2px(5));
+        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(dark ? 0x26FFFFFF : 0xDDEAF0F5);
+        background.setCornerRadius(ResUtil.dp2px(12));
+        background.setStroke(ResUtil.dp2px(1), dark ? 0x33FFFFFF : 0x33424B57);
+        chip.setBackground(background);
+        FlexboxLayout.LayoutParams params = new FlexboxLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, ResUtil.dp2px(6), ResUtil.dp2px(6));
+        chip.setLayoutParams(params);
+        container.addView(chip);
+    }
+
+    private String firstCountry(JsonObject detail) {
+        JsonArray countries = jsonArray(detail, "production_countries");
+        for (JsonElement element : countries) {
+            if (!element.isJsonObject()) continue;
+            String code = jsonString(element.getAsJsonObject(), "iso_3166_1");
+            String name = jsonString(element.getAsJsonObject(), "name");
+            if (!TextUtils.isEmpty(code)) return code;
+            if (!TextUtils.isEmpty(name)) return name;
+        }
+        return "";
+    }
+
+    private String firstCreator(JsonObject detail) {
+        JsonArray creators = jsonArray(detail, "created_by");
+        for (JsonElement element : creators) {
+            if (!element.isJsonObject()) continue;
+            String name = jsonString(element.getAsJsonObject(), "name");
+            if (!TextUtils.isEmpty(name)) return name;
+        }
         return "";
     }
 
@@ -1006,6 +1140,7 @@ public class TmdbHeaderView {
         platformView.setText(platform);
         platformView.setTextColor(0xFF9AA7B4);
         platformView.setTextSize(11);
+        if (Setting.isFusionDetailPage()) styleFusionBackdropText(platformView, COLOR_FUSION_BACKDROP_TEXT_SECONDARY);
         chip.addView(platformView);
 
         com.google.android.material.textview.MaterialTextView valueView = new com.google.android.material.textview.MaterialTextView(activity);
@@ -1013,6 +1148,7 @@ public class TmdbHeaderView {
         valueView.setTextColor(android.graphics.Color.parseColor(color));
         valueView.setTextSize(15);
         valueView.setTypeface(null, android.graphics.Typeface.BOLD);
+        if (Setting.isFusionDetailPage()) applyFusionTextShadow(valueView);
         androidx.appcompat.widget.LinearLayoutCompat.LayoutParams valueParams =
                 new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1026,6 +1162,329 @@ public class TmdbHeaderView {
         params.setMarginEnd(12);
         chip.setLayoutParams(params);
         return chip;
+    }
+
+    private void applyTheme() {
+        if (headerRoot == null) return;
+        int style = Setting.getTmdbDetailStyle();
+        if (Setting.isFusionDetailPage()) {
+            applyFusionTheme(style);
+            return;
+        }
+        boolean dark = style == Setting.DETAIL_STYLE_NATIVE || style == Setting.DETAIL_STYLE_CINEMA;
+        setCinemaRows(style == Setting.DETAIL_STYLE_CINEMA, style == Setting.DETAIL_STYLE_CINEMA);
+        int background = style == Setting.DETAIL_STYLE_CINEMA ? COLOR_CINEMA_BACKGROUND : dark ? COLOR_NATIVE_BACKGROUND : COLOR_PROFILE_BACKGROUND;
+        int primary = dark ? 0xFFFFFFFF : 0xFF15222B;
+        int secondary = dark ? 0xFFC8D2DC : 0xFF40555E;
+        int watermark = dark ? 0xFF6B7785 : 0xFF7E938A;
+        headerRoot.setBackgroundColor(background);
+        setTextColor(R.id.tmdbOverview, secondary);
+        setTextColor(R.id.tmdbMeta, dark ? 0xFFC8D2DC : 0xFFE4F3EE);
+        setTextColor(R.id.tmdbGenres, dark ? 0xFF9AA7B4 : 0xFFD5EAE3);
+        setTextColor(R.id.tmdbCastLabel, primary);
+        setTextColor(R.id.tmdbCrewLabel, primary);
+        setTextColor(R.id.tmdbPhotosLabel, primary);
+        setTextColor(R.id.tmdbExternalLinksLabel, primary);
+        setTextColor(R.id.tmdbRecommendationsLabel, primary);
+        setTextColor(R.id.tmdbPersonalTmdbRecommendationsLabel, primary);
+        setTextColor(R.id.tmdbPersonalDoubanRecommendationsLabel, primary);
+        setTextColor(R.id.tmdbOmdbRatingsLabel, primary);
+        TextView powered = findPoweredBy();
+        if (powered != null) powered.setTextColor(watermark);
+        clearBackdropTextShadows();
+        tintActions(style);
+    }
+
+    private void applyFusionTheme(int style) {
+        headerRoot.setBackgroundColor(0x00000000);
+        setVisibility(R.id.tmdbNativeHero, View.GONE);
+        setVisibility(R.id.tmdbFusionInfoCard, View.VISIBLE);
+        setVisibility(R.id.tmdbOverview, View.GONE);
+        setVisibility(R.id.tmdbRatingsContainer, View.GONE);
+        moveActionsForFusion();
+        styleFusionActions();
+
+        boolean cinema = style == Setting.DETAIL_STYLE_CINEMA;
+        boolean dark = cinema || isDarkDetailTheme();
+        int panel = dark ? 0xC914171C : 0xAFFFFFFF;
+        int line = dark ? 0x42FFFFFF : 0x33424B57;
+        int primary = dark ? 0xFFFFFFFF : 0xFF12202D;
+        int secondary = dark ? 0xD9FFFFFF : 0xCC12202D;
+        int muted = dark ? 0x99FFFFFF : 0x9912202D;
+        int body = dark ? 0xE6FFFFFF : 0xE612202D;
+
+        boolean cinemaRows = cinema;
+        if (castAdapter != null) castAdapter.setCinema(dark);
+        if (crewAdapter != null) crewAdapter.setCinema(dark);
+        setRecommendationCinema(cinemaRows);
+
+        MaterialCardView card = headerRoot.findViewById(R.id.tmdbFusionInfoCard);
+        if (card != null) {
+            card.setCardBackgroundColor(panel);
+            card.setStrokeColor(line);
+            card.setStrokeWidth(ResUtil.dp2px(1));
+        }
+        setTextColor(R.id.tmdbFusionTitle, primary);
+        setTextColor(R.id.tmdbFusionSubtitle, secondary);
+        setTextColor(R.id.tmdbFusionSource, muted);
+        setTextColor(R.id.tmdbFusionOverview, body);
+        styleFusionBackdropLabels();
+        styleFusionExternalLinks();
+        styleFusionMetaChips(dark);
+        styleFusionPlaybackControls(panel, line, primary);
+        styleFusionSpacing();
+        TextView powered = findPoweredBy();
+        if (powered != null) styleFusionBackdropText(powered, COLOR_FUSION_BACKDROP_WATERMARK);
+        tintActions(dark ? Setting.DETAIL_STYLE_CINEMA : Setting.DETAIL_STYLE_PROFILE);
+    }
+
+    private boolean isDarkDetailTheme() {
+        return !Setting.resolveTmdbDetailLightTheme(Setting.getTmdbDetailTheme(), isSystemNight());
+    }
+
+    private boolean isSystemNight() {
+        return (activity.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private void setCinemaRows(boolean peopleCinema, boolean recommendationCinema) {
+        if (castAdapter != null) castAdapter.setCinema(peopleCinema);
+        if (crewAdapter != null) crewAdapter.setCinema(peopleCinema);
+        setRecommendationCinema(recommendationCinema);
+    }
+
+    private void setRecommendationCinema(boolean cinema) {
+        if (recommendationAdapter != null) recommendationAdapter.setCinema(cinema);
+        if (personalTmdbRecommendationAdapter != null) personalTmdbRecommendationAdapter.setCinema(cinema);
+        if (personalDoubanRecommendationAdapter != null) personalDoubanRecommendationAdapter.setCinema(cinema);
+    }
+
+    private void setVisibility(int id, int visibility) {
+        View view = headerRoot.findViewById(id);
+        if (view != null) view.setVisibility(visibility);
+    }
+
+    private void moveActionsForFusion() {
+        View actions = headerRoot.findViewById(R.id.tmdbActionsScroll);
+        if (actions == null || actions.getParent() != headerRoot) return;
+        ViewGroup root = (ViewGroup) headerRoot;
+        int targetIndex = 0;
+        if (root.indexOfChild(actions) == targetIndex) return;
+        root.removeView(actions);
+        root.addView(actions, targetIndex);
+        ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) actions.getLayoutParams();
+        params.setMargins(0, ResUtil.dp2px(24), 0, ResUtil.dp2px(22));
+        actions.setLayoutParams(params);
+        actions.setPadding(ResUtil.dp2px(18), 0, ResUtil.dp2px(18), 0);
+    }
+
+    private void styleFusionActions() {
+        ViewGroup row = headerRoot.findViewById(R.id.tmdbActions);
+        MaterialButton rematch = headerRoot.findViewById(R.id.tmdbRematch);
+        MaterialButton keep = headerRoot.findViewById(R.id.tmdbKeep);
+        if (row != null && rematch != null && keep != null && row.indexOfChild(rematch) > row.indexOfChild(keep)) {
+            ViewGroup.LayoutParams params = rematch.getLayoutParams();
+            row.removeView(rematch);
+            row.addView(rematch, 1, params);
+        }
+        if (rematch != null) rematch.setText("重新匹配");
+    }
+
+    private void styleFusionPlaybackControls(int panel, int line, int textColor) {
+        ViewGroup controls = headerRoot.findViewById(R.id.tmdbPlaybackControls);
+        if (controls == null) return;
+        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(panel);
+        background.setCornerRadius(ResUtil.dp2px(20));
+        background.setStroke(ResUtil.dp2px(1), line);
+        controls.setBackground(background);
+        controls.setPadding(ResUtil.dp2px(16), ResUtil.dp2px(16), ResUtil.dp2px(16), ResUtil.dp2px(16));
+        ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) controls.getLayoutParams();
+        params.setMargins(ResUtil.dp2px(16), ResUtil.dp2px(22), ResUtil.dp2px(16), ResUtil.dp2px(20));
+        controls.setLayoutParams(params);
+        tintTree(controls, textColor);
+    }
+
+    private void styleFusionSpacing() {
+        setMargins(R.id.tmdbFusionInfoCard, 16, 0, 16, 22);
+        setTopMargin(R.id.tmdbCastLabel, 24);
+        setTopMargin(R.id.tmdbCast, 12);
+        setTopMargin(R.id.tmdbCrewLabel, 24);
+        setTopMargin(R.id.tmdbCrew, 12);
+        setTopMargin(R.id.tmdbPhotosLabel, 24);
+        setTopMargin(R.id.tmdbPhotos, 12);
+        setTopMargin(R.id.tmdbExternalLinksLabel, 24);
+        setTopMargin(R.id.tmdbExternalLinks, 12);
+        setTopMargin(R.id.tmdbRecommendationsLabel, 24);
+        setTopMargin(R.id.tmdbRecommendations, 12);
+        setTopMargin(R.id.tmdbPersonalTmdbRecommendationsLabel, 24);
+        setTopMargin(R.id.tmdbPersonalTmdbRecommendations, 12);
+        setTopMargin(R.id.tmdbPersonalDoubanRecommendationsLabel, 24);
+        setTopMargin(R.id.tmdbPersonalDoubanRecommendations, 12);
+        setTopMargin(R.id.tmdbOmdbRatingsLabel, 24);
+        setTopMargin(R.id.tmdbOmdbRatingsScroll, 12);
+    }
+
+    private void styleFusionMetaChips(boolean dark) {
+        FlexboxLayout meta = headerRoot.findViewById(R.id.tmdbFusionMeta);
+        if (meta == null) return;
+        for (int i = 0; i < meta.getChildCount(); i++) {
+            View child = meta.getChildAt(i);
+            if (child instanceof TextView text) {
+                text.setTextColor(dark ? 0xE6FFFFFF : 0xFF12202D);
+            }
+            android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+            background.setColor(dark ? 0x26FFFFFF : 0xDDEAF0F5);
+            background.setCornerRadius(ResUtil.dp2px(12));
+            background.setStroke(ResUtil.dp2px(1), dark ? 0x33FFFFFF : 0x33424B57);
+            child.setBackground(background);
+        }
+    }
+
+    private void styleFusionBackdropLabels() {
+        for (int id : BACKDROP_SECTION_LABELS) styleFusionBackdropText(id, COLOR_FUSION_BACKDROP_TEXT);
+    }
+
+    private void styleFusionExternalLinks() {
+        ViewGroup container = headerRoot.findViewById(R.id.tmdbExternalLinks);
+        if (container == null) return;
+        for (int i = 0; i < container.getChildCount(); i++) styleFusionExternalLink(container.getChildAt(i));
+    }
+
+    private void styleFusionExternalLink(View view) {
+        if (view instanceof TextView textView) {
+            styleFusionBackdropText(textView, isExternalRatingText(textView) ? COLOR_FUSION_LINK_RATING : COLOR_FUSION_BACKDROP_TEXT);
+        } else if (view instanceof ImageView imageView) {
+            styleFusionLinkIcon(imageView);
+        }
+        if (!(view instanceof ViewGroup group)) return;
+        for (int i = 0; i < group.getChildCount(); i++) styleFusionExternalLink(group.getChildAt(i));
+    }
+
+    private void styleFusionLinkIcon(ImageView imageView) {
+        imageView.setColorFilter(COLOR_FUSION_LINK_ICON);
+        int size = ResUtil.dp2px(22);
+        ViewGroup.LayoutParams params = imageView.getLayoutParams();
+        if (params != null) {
+            params.width = size;
+            params.height = size;
+            imageView.setLayoutParams(params);
+        }
+        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        background.setColor(COLOR_FUSION_LINK_ICON_BACKGROUND);
+        imageView.setBackground(background);
+        int padding = ResUtil.dp2px(4);
+        imageView.setPadding(padding, padding, padding, padding);
+    }
+
+    private boolean isExternalRatingText(TextView textView) {
+        CharSequence text = textView.getText();
+        return text != null && text.toString().startsWith("★");
+    }
+
+    private void styleFusionBackdropText(int id, int color) {
+        TextView view = headerRoot.findViewById(id);
+        styleFusionBackdropText(view, color);
+    }
+
+    private void styleFusionBackdropText(TextView view, int color) {
+        if (view == null) return;
+        view.setTextColor(color);
+        applyFusionTextShadow(view);
+    }
+
+    private void applyFusionTextShadow(TextView view) {
+        if (view == null) return;
+        view.setShadowLayer(ResUtil.dp2px(2), 0, ResUtil.dp2px(1), COLOR_FUSION_TEXT_SHADOW);
+    }
+
+    private void clearBackdropTextShadows() {
+        for (int id : BACKDROP_SECTION_LABELS) clearTextShadow(id);
+        clearTextShadow(findPoweredBy());
+        ViewGroup container = headerRoot.findViewById(R.id.tmdbExternalLinks);
+        if (container != null) clearFusionExternalLinkStyling(container);
+    }
+
+    private void clearFusionExternalLinkStyling(View view) {
+        if (view instanceof TextView textView) clearTextShadow(textView);
+        if (view instanceof ImageView imageView) {
+            imageView.setColorFilter(0xFF9E9E9E);
+            imageView.setBackground(null);
+            imageView.setPadding(0, 0, 0, 0);
+        }
+        if (!(view instanceof ViewGroup group)) return;
+        for (int i = 0; i < group.getChildCount(); i++) clearFusionExternalLinkStyling(group.getChildAt(i));
+    }
+
+    private void clearTextShadow(int id) {
+        TextView view = headerRoot.findViewById(id);
+        clearTextShadow(view);
+    }
+
+    private void clearTextShadow(TextView view) {
+        if (view != null) view.setShadowLayer(0, 0, 0, 0);
+    }
+
+    private void setTopMargin(int id, int topDp) {
+        View view = headerRoot.findViewById(id);
+        if (view == null || !(view.getLayoutParams() instanceof ViewGroup.MarginLayoutParams params)) return;
+        params.topMargin = ResUtil.dp2px(topDp);
+        view.setLayoutParams(params);
+    }
+
+    private void setMargins(int id, int startDp, int topDp, int endDp, int bottomDp) {
+        View view = headerRoot.findViewById(id);
+        if (view == null || !(view.getLayoutParams() instanceof ViewGroup.MarginLayoutParams params)) return;
+        params.setMargins(ResUtil.dp2px(startDp), ResUtil.dp2px(topDp), ResUtil.dp2px(endDp), ResUtil.dp2px(bottomDp));
+        view.setLayoutParams(params);
+    }
+
+    private void tintTree(View view, int color) {
+        if (view instanceof RecyclerView) return;
+        if (view instanceof TextView textView) textView.setTextColor(color);
+        if (view instanceof ImageView imageView) imageView.setColorFilter(color);
+        if (!(view instanceof ViewGroup group)) return;
+        for (int i = 0; i < group.getChildCount(); i++) tintTree(group.getChildAt(i), color);
+    }
+
+    private void setTextColor(int id, int color) {
+        TextView view = headerRoot.findViewById(id);
+        if (view != null) view.setTextColor(color);
+    }
+
+    private TextView findPoweredBy() {
+        return findText(headerRoot, activity.getString(R.string.tmdb_powered_by));
+    }
+
+    private TextView findText(View view, String text) {
+        if (view instanceof TextView textView && TextUtils.equals(textView.getText(), text)) return textView;
+        if (!(view instanceof ViewGroup group)) return null;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            TextView result = findText(group.getChildAt(i), text);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private void tintActions(int style) {
+        tintAction(R.id.tmdbChangeSource, style);
+        tintAction(R.id.tmdbKeep, style);
+        tintAction(R.id.tmdbRematch, style);
+    }
+
+    private void tintAction(int id, int style) {
+        MaterialButton button = headerRoot.findViewById(id);
+        if (button == null) return;
+        if (style == Setting.DETAIL_STYLE_NATIVE) {
+            button.setTextColor(ContextCompat.getColor(activity, R.color.tmdb_action_button_text));
+            button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.tmdb_action_button_stroke)));
+            button.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.tmdb_action_button_bg)));
+            return;
+        }
+        boolean cinema = style == Setting.DETAIL_STYLE_CINEMA;
+        button.setTextColor(cinema ? 0xFFE9F0F5 : 0xFF16372F);
+        button.setStrokeColor(ColorStateList.valueOf(cinema ? 0x66FFFFFF : 0x663C7D6B));
+        button.setBackgroundTintList(ColorStateList.valueOf(cinema ? 0x26FFFFFF : 0xD9FFFFFF));
     }
 
     /**
@@ -1266,6 +1725,7 @@ public class TmdbHeaderView {
             return;
         }
         view.setText("★ " + rating);
+        if (Setting.isFusionDetailPage()) styleFusionBackdropText(view, COLOR_FUSION_LINK_RATING);
         view.setVisibility(View.VISIBLE);
     }
 
@@ -1292,15 +1752,17 @@ public class TmdbHeaderView {
         nameView.setText(name);
         nameView.setTextColor(0xFFFFFFFF);
         nameView.setTextSize(14);
+        if (Setting.isFusionDetailPage()) styleFusionBackdropText(nameView, COLOR_FUSION_BACKDROP_TEXT);
         androidx.appcompat.widget.LinearLayoutCompat.LayoutParams nameParams =
                 new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         linkItem.addView(nameView, nameParams);
 
         // 评分视图（始终创建，初始可能为空）
         com.google.android.material.textview.MaterialTextView ratingView = new com.google.android.material.textview.MaterialTextView(activity);
-        ratingView.setTextColor(0xFFFFC107);
+        ratingView.setTextColor(Setting.isFusionDetailPage() ? COLOR_FUSION_LINK_RATING : 0xFFFFC107);
         ratingView.setTextSize(13);
         ratingView.setGravity(android.view.Gravity.END);
+        if (Setting.isFusionDetailPage()) applyFusionTextShadow(ratingView);
         androidx.appcompat.widget.LinearLayoutCompat.LayoutParams ratingParams =
                 new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         ratingParams.setMarginEnd(12);
@@ -1319,8 +1781,9 @@ public class TmdbHeaderView {
         iconView.setImageResource(R.drawable.ic_open);
         iconView.setColorFilter(0xFF9E9E9E);
         androidx.appcompat.widget.LinearLayoutCompat.LayoutParams iconParams =
-                new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(24, 24);
+                new androidx.appcompat.widget.LinearLayoutCompat.LayoutParams(ResUtil.dp2px(22), ResUtil.dp2px(22));
         linkItem.addView(iconView, iconParams);
+        if (Setting.isFusionDetailPage()) styleFusionLinkIcon(iconView);
 
         // 点击事件
         linkItem.setOnClickListener(v -> {
