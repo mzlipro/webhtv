@@ -91,6 +91,26 @@
                     android:paddingEnd="8dp"
                     android:visibility="gone" />
 
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/guestsTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/detail_episode_guests"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/guestsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="164dp"
+                    android:layout_marginTop="12dp"
+                    android:clipToPadding="false"
+                    android:paddingEnd="8dp"
+                    android:visibility="gone" />
+
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
 
