@@ -658,6 +658,7 @@
     <string name="setting_auto">Auto</string>
     <string name="setting_custom">Custom</string>
     <string name="setting_size">Image size</string>
+    <string name="setting_ui_scale">Interface size</string>
     <string name="setting_doh">DoH</string>
     <string name="setting_proxy">Proxy</string>
     <string name="setting_cache">Cache</string>
@@ -1054,6 +1055,13 @@
     <string-array name="select_site_column">
         <item>Single row</item>
         <item>Double row</item>
+    </string-array>
+
+    <string-array name="select_ui_scale">
+        <item>Follow system</item>
+        <item>Standard</item>
+        <item>Compact</item>
+        <item>Smaller</item>
     </string-array>
 
     <string-array name="select_scale">

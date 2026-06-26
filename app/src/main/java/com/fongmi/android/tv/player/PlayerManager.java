@@ -58,10 +58,13 @@ import java.util.Map;
 
 public class PlayerManager implements ParseCallback {
 
+    public static final String RELOAD_LUT_WARMUP = "__webhtv_lut_warmup_reload__";
+
     private static final long LOCAL_PROXY_READY_TIMEOUT_MS = 5000;
     private static final long LOCAL_PROXY_RETRY_DELAY_MS = 1000;
     private static final int LOCAL_PROXY_MAX_RETRY = 2;
     private static final int[] PLAYER_FALLBACK_ORDER = new int[]{PlayerSetting.EXO, PlayerSetting.IJK, PlayerSetting.SYSTEM};
+    private static final int LUT_WARMUP_RECOVERED_ERROR_REFRESH_THRESHOLD = 3;
     private static final float[] SPEED_PRESETS = new float[]{0.5f, 0.75f, 1f, 1.2f, 1.5f, 2f, 3f, 5f};
     private static final DecimalFormat SPEED_FORMAT = new DecimalFormat("0.##x");
 
@@ -87,6 +90,9 @@ public class PlayerManager implements ParseCallback {
     private boolean lutPipelinePrepareInProgress;
     private boolean pendingLutPreview;
     private boolean waitingLutBeforePlay;
+    private boolean lutWarmupRecoveryActive;
+    private boolean lutWarmupRefreshRequested;
+    private boolean lutWarmupReloadPreviewPending;
     private boolean lutAllowed = true;
     private boolean manualPlayerSwitchPending;
     private int playerType;
@@ -95,6 +101,7 @@ public class PlayerManager implements ParseCallback {
     private int prepareSeq;
     private int lutApplySeq;
     private boolean[] playerFallbackTried;
+    private int lutWarmupRecoveredErrors;
 
     public PlayerManager(Callback callback) {
         this.runnable = this::onPlaybackTimeout;
@@ -123,6 +130,8 @@ public class PlayerManager implements ParseCallback {
         lutPipelinePrepareInProgress = false;
         pendingLutPreview = false;
         waitingLutBeforePlay = false;
+        lutWarmupReloadPreviewPending = false;
+        clearLutWarmupRecovery();
         currentDanmakuUrl = null;
     }
 
@@ -145,6 +154,8 @@ public class PlayerManager implements ParseCallback {
         lutPipelinePrepareInProgress = false;
         pendingLutPreview = false;
         waitingLutBeforePlay = false;
+        lutWarmupReloadPreviewPending = false;
+        clearLutWarmupRecovery();
     }
 
     public Player getPlayer() {
@@ -501,6 +512,7 @@ public class PlayerManager implements ParseCallback {
         lutPipelinePrepareInProgress = false;
         pendingLutPreview = false;
         waitingLutBeforePlay = false;
+        clearLutWarmupRecovery();
     }
 
     public void resetTrack() {
@@ -686,6 +698,7 @@ public class PlayerManager implements ParseCallback {
         lutPipelinePrepareInProgress = false;
         pendingLutPreview = false;
         dynamicLutEffect.clear();
+        clearLutWarmupRecovery();
         if (videoEffectsDirty) {
             if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "rebuild clean player before media item reason=prepare spec=%s", debugSpec());
             rebuildPlayer();
@@ -713,6 +726,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects("disallowed");
             completeLutBeforePlay("disallowed");
             return;
@@ -725,6 +739,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects("off");
             completeLutBeforePlay("off");
             return;
@@ -738,6 +753,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects("missing");
             completeLutBeforePlay("missing");
             if (notify) Notify.show(R.string.lut_missing);
@@ -748,6 +764,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects(reason);
             completeLutBeforePlay(reason);
             if (notify) Notify.show(reason);
@@ -824,6 +841,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects("auto_disallowed");
             completeLutBeforePlay("auto_disallowed");
             return;
@@ -833,6 +851,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects("auto_off");
             completeLutBeforePlay("auto_off");
             return;
@@ -842,6 +861,7 @@ public class PlayerManager implements ParseCallback {
             lutAppliedForItem = true;
             lutApplyInProgress = false;
             pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
             setNeutralVideoEffects(reason);
             completeLutBeforePlay(reason);
             return;
@@ -853,7 +873,9 @@ public class PlayerManager implements ParseCallback {
         if (lutApplyInProgress) return;
         if (lutAppliedForItem) return;
         if (!ensureLutPipelineReadyForCurrentItem("auto")) return;
-        applyLut(false, pendingLutPreview);
+        boolean preview = pendingLutPreview || lutWarmupReloadPreviewPending;
+        lutWarmupReloadPreviewPending = false;
+        applyLut(false, preview);
     }
 
     private void completeLutBeforePlay(String reason) {
@@ -891,10 +913,41 @@ public class PlayerManager implements ParseCallback {
         }
         lutPipelineReadyForItem = true;
         if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "prepare current item with effects reason=%s position=%d play=%s spec=%s", reason, position, playWhenReady, debugSpec());
+        startLutWarmupRecovery();
         engine.restart(spec.checkUa(), position, playWhenReady);
         if (speed != 1f) setSpeed(speed);
         lutPipelinePrepareInProgress = false;
         return false;
+    }
+
+    private void startLutWarmupRecovery() {
+        lutWarmupRecoveryActive = true;
+        lutWarmupRefreshRequested = false;
+        lutWarmupRecoveredErrors = 0;
+    }
+
+    private void clearLutWarmupRecovery() {
+        lutWarmupRecoveryActive = false;
+        lutWarmupRefreshRequested = false;
+        lutWarmupRecoveredErrors = 0;
+    }
+
+    private boolean retryLutWarmupByRefresh(String reason) {
+        if (!lutWarmupRecoveryActive || lutWarmupRefreshRequested || !LutSetting.isEnabled()) return false;
+        lutWarmupRefreshRequested = true;
+        lutWarmupRecoveryActive = false;
+        lutWarmupReloadPreviewPending = true;
+        App.removeCallbacks(runnable);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "request playback refresh after warmup failure reason=%s errors=%d spec=%s", reason, lutWarmupRecoveredErrors, debugSpec());
+        callback.onReload(RELOAD_LUT_WARMUP);
+        return true;
+    }
+
+    private boolean retryLutWarmupByRefresh(PlayerEngine.ErrorAction action, PlaybackException e) {
+        if (!lutWarmupRecoveryActive || lutWarmupRefreshRequested || !LutSetting.isEnabled()) return false;
+        if (action == PlayerEngine.ErrorAction.RECOVERED && ++lutWarmupRecoveredErrors < LUT_WARMUP_RECOVERED_ERROR_REFRESH_THRESHOLD) return false;
+        if (action != PlayerEngine.ErrorAction.RECOVERED && action != PlayerEngine.ErrorAction.FATAL && action != PlayerEngine.ErrorAction.RELOAD) return false;
+        return retryLutWarmupByRefresh("error_" + e.errorCode + "_" + action);
     }
 
     private boolean shouldWaitForLutFormat() {
@@ -1091,6 +1144,7 @@ public class PlayerManager implements ParseCallback {
             if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "state=%s spec=%s", stateName(state), debugSpec());
             if (state == Player.STATE_READY) {
                 manualPlayerSwitchPending = false;
+                clearLutWarmupRecovery();
                 applyLutForCurrentItem();
             }
         }
@@ -1125,6 +1179,7 @@ public class PlayerManager implements ParseCallback {
             if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "error code=%d message=%s action=%s retry=%d spec=%s cause=%s", e.errorCode, e.getMessage(), action, retry, debugSpec(), causeChain(e));
             LocalProxyDebug.dumpIfLocalFailure(spec == null ? null : spec.getUrl(), e);
             if (retryLutFailure(e)) return;
+            if (retryLutWarmupByRefresh(action, e)) return;
             if (action == PlayerEngine.ErrorAction.FATAL && retryLocalProxy(e)) return;
             if (shouldStopOnManualSwitchFailure(manualPlayerSwitchPending, action)) {
                 callback.onError(engine.getErrorMessage(e));
@@ -1154,6 +1209,7 @@ public class PlayerManager implements ParseCallback {
 
     private void onPlaybackTimeout() {
         PlaybackException e = new PlaybackException(ResUtil.getString(R.string.error_play_timeout), null, PlaybackException.ERROR_CODE_TIMEOUT);
+        if (retryLutWarmupByRefresh("timeout")) return;
         if (manualPlayerSwitchPending) {
             callback.onError(ResUtil.getString(R.string.error_play_timeout));
             return;
@@ -1172,6 +1228,7 @@ public class PlayerManager implements ParseCallback {
         lutAppliedForItem = true;
         lutApplyInProgress = false;
         pendingLutPreview = false;
+        lutWarmupReloadPreviewPending = false;
         clearVideoEffects("lut_error_retry");
         Notify.show(R.string.lut_apply_failed);
         if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "disable and retry after frame processing error code=%d spec=%s cause=%s", e.errorCode, debugSpec(), causeChain(e));

@@ -2,6 +2,7 @@ package com.fongmi.android.tv.ui.base;
 
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 
+import android.content.Context;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,6 +33,11 @@ public abstract class BaseActivity extends AppCompatActivity {
     private AudioMiniPlayer audioMiniPlayer;
 
     protected abstract ViewBinding getBinding();
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(Setting.wrapUiScale(newBase));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
