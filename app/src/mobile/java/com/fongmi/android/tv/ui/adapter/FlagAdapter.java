@@ -6,6 +6,7 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.fongmi.android.tv.R;
@@ -21,6 +22,7 @@ public class FlagAdapter extends RecyclerView.Adapter<FlagAdapter.ViewHolder> {
     private final OnClickListener listener;
     private final List<Flag> mItems;
     private boolean tmdbStyle;
+    private boolean tmdbLight = true;
 
     public FlagAdapter(OnClickListener listener) {
         this.listener = listener;
@@ -35,6 +37,12 @@ public class FlagAdapter extends RecyclerView.Adapter<FlagAdapter.ViewHolder> {
     public void setTmdbStyle(boolean tmdbStyle) {
         if (this.tmdbStyle == tmdbStyle) return;
         this.tmdbStyle = tmdbStyle;
+        notifyItemRangeChanged(0, getItemCount());
+    }
+
+    public void setTmdbLight(boolean tmdbLight) {
+        if (this.tmdbLight == tmdbLight) return;
+        this.tmdbLight = tmdbLight;
         notifyItemRangeChanged(0, getItemCount());
     }
 
@@ -106,7 +114,14 @@ public class FlagAdapter extends RecyclerView.Adapter<FlagAdapter.ViewHolder> {
         Flag item = mItems.get(position);
         holder.text.setText(item.getShow());
         holder.text.setSelected(item.isSelected());
+        applyTmdbTheme(holder.text);
         holder.text.setOnClickListener(v -> listener.onItemClick(item));
+    }
+
+    private void applyTmdbTheme(TextView text) {
+        if (!tmdbStyle) return;
+        text.setBackgroundResource(tmdbLight ? R.drawable.selector_tmdb_flag_item : R.drawable.selector_tmdb_flag_item_dark);
+        text.setTextColor(ContextCompat.getColorStateList(text.getContext(), tmdbLight ? R.color.selector_tmdb_flag_text : R.color.selector_tmdb_flag_text_dark));
     }
 
     public class ViewHolder extends RecyclerView.ViewHolder {

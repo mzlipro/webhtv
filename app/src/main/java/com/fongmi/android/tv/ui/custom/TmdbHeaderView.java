@@ -116,6 +116,7 @@ public class TmdbHeaderView {
     private ImageView backdropView;
     private java.util.List<String> backdropPhotos = new java.util.ArrayList<>();
     private int currentBackdropIndex = 0;
+    private int detailThemeModeOverride;
     private android.os.Handler backdropHandler;
     private Runnable backdropRunnable;
 
@@ -133,6 +134,12 @@ public class TmdbHeaderView {
 
     public void setActionListener(ActionListener listener) {
         this.actionListener = listener;
+    }
+
+    public void setDetailThemeMode(int detailThemeMode) {
+        int normalized = detailThemeMode == 1 ? 1 : 2;
+        detailThemeModeOverride = normalized;
+        applyTheme();
     }
 
     /**
@@ -303,7 +310,7 @@ public class TmdbHeaderView {
         // 个性推荐
         bindRecommendationRow(R.id.tmdbPersonalTmdbRecommendationsLabel, R.id.tmdbPersonalTmdbRecommendations, personalTmdbRecommendationAdapter, adapter.getPersonalTmdbRecommendations());
         bindRecommendationRow(R.id.tmdbPersonalDoubanRecommendationsLabel, R.id.tmdbPersonalDoubanRecommendations, personalDoubanRecommendationAdapter, adapter.getPersonalDoubanRecommendations());
-        bindRecommendationRow(R.id.tmdbPersonalAiRecommendationsLabel, R.id.tmdbPersonalAiRecommendations, personalAiRecommendationAdapter, adapter.getPersonalAiRecommendations());
+        bindPersonalAiRecommendationRow(adapter.getPersonalAiRecommendations());
 
         // 内容填充完成，显示头部容器
         applyTheme();
@@ -344,7 +351,7 @@ public class TmdbHeaderView {
 
     public void refreshPersonalAiRecommendations() {
         if (boundAdapter == null || headerRoot == null) return;
-        bindRecommendationRow(R.id.tmdbPersonalAiRecommendationsLabel, R.id.tmdbPersonalAiRecommendations, personalAiRecommendationAdapter, boundAdapter.getPersonalAiRecommendations());
+        bindPersonalAiRecommendationRow(boundAdapter.getPersonalAiRecommendations());
     }
 
     private void setupRecyclerViews() {
@@ -382,6 +389,7 @@ public class TmdbHeaderView {
             com.fongmi.android.tv.ui.dialog.AiRecommendationInfoDialog.show(activity, item);
             return true;
         });
+        personalAiRecommendationAdapter.setOnItemFocusListener(this::showAiRecommendationReason);
         personalAiRecommendationsRv.setAdapter(personalAiRecommendationAdapter);
 
         RecyclerView recommendationsRv = headerRoot.findViewById(R.id.tmdbRecommendations);
@@ -402,6 +410,25 @@ public class TmdbHeaderView {
             headerRoot.findViewById(labelId).setVisibility(View.GONE);
             headerRoot.findViewById(recyclerId).setVisibility(View.GONE);
         }
+    }
+
+    private void bindPersonalAiRecommendationRow(List<TmdbItem> items) {
+        bindRecommendationRow(R.id.tmdbPersonalAiRecommendationsLabel, R.id.tmdbPersonalAiRecommendations, personalAiRecommendationAdapter, items);
+        if (items == null || items.isEmpty()) showAiRecommendationReason(null, false);
+    }
+
+    private void showAiRecommendationReason(TmdbItem item, boolean focused) {
+        if (headerRoot == null) return;
+        TextView reason = headerRoot.findViewById(R.id.tmdbPersonalAiReason);
+        if (reason == null) return;
+        String text = item == null ? "" : item.getOverview();
+        if (!focused || TextUtils.isEmpty(text)) {
+            reason.setText("");
+            reason.setVisibility(View.GONE);
+            return;
+        }
+        reason.setText(activity.getString(R.string.ai_recommendation_reason_preview, text));
+        reason.setVisibility(View.VISIBLE);
     }
 
     private void attachLazyLoader(RecyclerView recyclerView, RecommendationRow row) {
@@ -1249,7 +1276,7 @@ public class TmdbHeaderView {
             return;
         }
         boolean cinema = style == Setting.DETAIL_STYLE_CINEMA;
-        boolean light = cinema ? TmdbCinemaTheme.resolveLight(Setting.getTmdbDetailTheme(), isSystemNight()) : style == Setting.DETAIL_STYLE_PROFILE;
+        boolean light = cinema ? resolveLightTheme() : style == Setting.DETAIL_STYLE_PROFILE;
         boolean dark = style == Setting.DETAIL_STYLE_NATIVE || (cinema && !light);
         setCinemaRows(cinema, cinema, light);
         int background = cinema ? TmdbCinemaTheme.palette(light).background() : dark ? COLOR_NATIVE_BACKGROUND : COLOR_PROFILE_BACKGROUND;
@@ -1268,6 +1295,8 @@ public class TmdbHeaderView {
         setTextColor(R.id.tmdbPersonalTmdbRecommendationsLabel, primary);
         setTextColor(R.id.tmdbPersonalDoubanRecommendationsLabel, primary);
         setTextColor(R.id.tmdbPersonalAiRecommendationsLabel, primary);
+        setTextColor(R.id.tmdbPersonalAiReason, secondary);
+        clearTextShadow(R.id.tmdbPersonalAiReason);
         setTextColor(R.id.tmdbOmdbRatingsLabel, primary);
         TextView powered = findPoweredBy();
         if (powered != null) powered.setTextColor(watermark);
@@ -1285,7 +1314,7 @@ public class TmdbHeaderView {
         moveActionsForFusion();
 
         boolean cinema = style == Setting.DETAIL_STYLE_CINEMA;
-        boolean light = cinema ? TmdbCinemaTheme.resolveLight(Setting.getTmdbDetailTheme(), isSystemNight()) : !isDarkDetailTheme();
+        boolean light = cinema ? resolveLightTheme() : !isDarkDetailTheme();
         boolean dark = !light;
         int panel = dark ? 0xC914171C : 0xAFFFFFFF;
         int line = dark ? 0x42FFFFFF : 0x33424B57;
@@ -1316,6 +1345,7 @@ public class TmdbHeaderView {
         setTextColor(R.id.tmdbFusionSubtitle, secondary);
         setTextColor(R.id.tmdbFusionOverview, body);
         styleFusionBackdropLabels(dark);
+        styleFusionAiReason(dark);
         styleFusionExternalLinks(dark);
         styleFusionMetaChips(dark);
         styleFusionPlaybackControls(panel, line, primary);
@@ -1327,11 +1357,19 @@ public class TmdbHeaderView {
     }
 
     private boolean isDarkDetailTheme() {
-        return !Setting.resolveTmdbDetailLightTheme(Setting.getTmdbDetailTheme(), isSystemNight());
+        return !resolveLightTheme();
     }
 
     private boolean isSystemNight() {
         return (activity.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private boolean resolveLightTheme() {
+        return Setting.resolveTmdbDetailLightTheme(currentDetailThemeMode(), isSystemNight());
+    }
+
+    private int currentDetailThemeMode() {
+        return detailThemeModeOverride == 1 || detailThemeModeOverride == 2 ? detailThemeModeOverride : Setting.getTmdbDetailTheme();
     }
 
     private void setCinemaRows(boolean peopleCinema, boolean recommendationCinema, boolean light) {
@@ -1440,8 +1478,15 @@ public class TmdbHeaderView {
         setTopMargin(R.id.tmdbPersonalDoubanRecommendations, 12);
         setTopMargin(R.id.tmdbPersonalAiRecommendationsLabel, 24);
         setTopMargin(R.id.tmdbPersonalAiRecommendations, 12);
+        setTopMargin(R.id.tmdbPersonalAiReason, 8);
         setTopMargin(R.id.tmdbOmdbRatingsLabel, 24);
         setTopMargin(R.id.tmdbOmdbRatingsScroll, 12);
+    }
+
+    private void styleFusionAiReason(boolean dark) {
+        TextView reason = headerRoot.findViewById(R.id.tmdbPersonalAiReason);
+        if (reason == null) return;
+        styleFusionBackdropText(reason, dark ? COLOR_FUSION_BACKDROP_TEXT_SECONDARY : 0xCC12202D, dark);
     }
 
     private void styleFusionMetaChips(boolean dark) {
@@ -1628,7 +1673,7 @@ public class TmdbHeaderView {
 
     private boolean isLightDetailChrome() {
         int style = Setting.getTmdbDetailStyle();
-        if (style == Setting.DETAIL_STYLE_CINEMA) return TmdbCinemaTheme.resolveLight(Setting.getTmdbDetailTheme(), isSystemNight());
+        if (style == Setting.DETAIL_STYLE_CINEMA) return resolveLightTheme();
         return style == Setting.DETAIL_STYLE_PROFILE && !Setting.isFusionDetailPage();
     }
 

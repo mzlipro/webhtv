@@ -123,6 +123,84 @@ public class VideoActivityLayoutTest {
         assertTrue("episode list must move after episode title", episodeTitle < episode);
     }
 
+    @Test
+    public void mobileVideoDirectTmdbCarriesDetailThemeIntoPlayback() throws Exception {
+        Path sourcePath = findMobileJavaPath().resolve(Path.of("com", "fongmi", "android", "tv", "ui", "activity", "VideoActivity.java"));
+        String source = new String(Files.readAllBytes(sourcePath), StandardCharsets.UTF_8);
+
+        assertTrue("direct TMDB playback must persist the selected detail theme in its intent",
+                source.contains("EXTRA_TMDB_DETAIL_THEME") && source.contains("intent.putExtra(EXTRA_TMDB_DETAIL_THEME, Setting.getTmdbDetailTheme())"));
+        assertTrue("Fusion playback theme resolution must prefer the launch intent over the global default",
+                source.contains("getIntent().getIntExtra(EXTRA_TMDB_DETAIL_THEME, Setting.getTmdbDetailTheme())"));
+        assertTrue("TMDB header view must receive the playback theme override before it draws the source panel",
+                source.contains("mTmdbHeaderView.setDetailThemeMode(getFusionDetailThemeMode())"));
+    }
+
+    @Test
+    public void mobileVideoFusionThemeToggleActuallyChangesThemeMode() throws Exception {
+        Path sourcePath = findMobileJavaPath().resolve(Path.of("com", "fongmi", "android", "tv", "ui", "activity", "VideoActivity.java"));
+        String source = new String(Files.readAllBytes(sourcePath), StandardCharsets.UTF_8);
+
+        assertTrue("fusion theme button must switch light to dark and dark to light",
+                source.contains("int theme = isFusionLightTheme() ? 2 : 1;"));
+    }
+
+    @Test
+    public void mobileVideoFusionPlaybackControlsRefreshAfterBeingMoved() throws Exception {
+        Path sourcePath = findMobileJavaPath().resolve(Path.of("com", "fongmi", "android", "tv", "ui", "activity", "VideoActivity.java"));
+        String source = new String(Files.readAllBytes(sourcePath), StandardCharsets.UTF_8);
+        int method = source.indexOf("private void moveFlagAndEpisodeToTmdb()");
+        int updateVisibility = source.indexOf("updateEpisodeGroupVisibility();", method);
+        int refreshTheme = source.indexOf("applyFusionThemeSurface();", updateVisibility);
+
+        assertTrue(sourcePath + " is missing moveFlagAndEpisodeToTmdb", method >= 0);
+        assertTrue("fusion playback controls must update visibility before final theme sync", updateVisibility > method);
+        assertTrue("fusion playback controls must be re-themed after all source and episode views are moved", refreshTheme > updateVisibility);
+    }
+
+    @Test
+    public void leanbackTmdbRecommendationPresenterReportsAlreadyFocusedAiCards() throws Exception {
+        Path sourcePath = findLeanbackJavaPath().resolve(Path.of("com", "fongmi", "android", "tv", "ui", "presenter", "TmdbRecommendationPresenter.java"));
+        String source = new String(Files.readAllBytes(sourcePath), StandardCharsets.UTF_8);
+
+        assertTrue("AI recommendation reason must update when a rebound card is already focused",
+                source.contains("holder.view.hasFocus() && mFocusListener != null") && source.contains("mFocusListener.onItemFocus(tmdbItem, true)"));
+        assertTrue("AI recommendation reason must clear when a focused card is unbound",
+                source.contains("viewHolder.view.hasFocus() && holder.item != null && mFocusListener != null")
+                        && source.contains("mFocusListener.onItemFocus(holder.item, false)"));
+    }
+
+    @Test
+    public void tmdbHeaderRefreshesThemeEvenWhenModeValueDidNotChange() throws Exception {
+        Path sourcePath = findMainJavaPath().resolve(Path.of("com", "fongmi", "android", "tv", "ui", "custom", "TmdbHeaderView.java"));
+        String source = new String(Files.readAllBytes(sourcePath), StandardCharsets.UTF_8);
+        int method = source.indexOf("public void setDetailThemeMode(int detailThemeMode)");
+        int assign = source.indexOf("detailThemeModeOverride = normalized;", method);
+        int apply = source.indexOf("applyTheme();", method);
+        int earlyReturn = source.indexOf("return;", method);
+
+        assertTrue(sourcePath + " is missing setDetailThemeMode", method >= 0);
+        assertTrue("TMDB header must remember the normalized detail theme mode", assign > method);
+        assertTrue("TMDB header must apply theme after receiving the detail theme mode", apply > assign);
+        assertTrue("TMDB header must not skip theme refresh just because the numeric mode is unchanged",
+                earlyReturn < 0 || earlyReturn > apply);
+    }
+
+    @Test
+    public void mobileFusionBackdropFillsBehindTopChrome() throws Exception {
+        Path sourcePath = findMobileJavaPath().resolve(Path.of("com", "fongmi", "android", "tv", "ui", "activity", "VideoActivity.java"));
+        String source = new String(Files.readAllBytes(sourcePath), StandardCharsets.UTF_8);
+        int method = source.indexOf("private void applyFusionBackdropLayout()");
+
+        assertTrue(sourcePath + " is missing applyFusionBackdropLayout", method >= 0);
+        assertTrue("Fusion backdrop must clear below-video anchoring and align to the top of the root",
+                source.indexOf("wallParams.addRule(RelativeLayout.ALIGN_PARENT_TOP)", method) > method);
+        assertTrue("Fusion backdrop must keep covering the bottom of the root",
+                source.indexOf("wallParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)", method) > method);
+        assertTrue("Fusion status bar spacer must be transparent so the backdrop reaches the status icons",
+                source.indexOf("mBinding.statusBar.setBackgroundColor(Color.TRANSPARENT)", method) > method);
+    }
+
     private static Path findMobileResPath() {
         Path moduleRelative = Path.of("src", "mobile", "res");
         if (Files.exists(moduleRelative)) return moduleRelative;
@@ -133,6 +211,18 @@ public class VideoActivityLayoutTest {
         Path moduleRelative = Path.of("src", "mobile", "java");
         if (Files.exists(moduleRelative)) return moduleRelative;
         return Path.of("app", "src", "mobile", "java");
+    }
+
+    private static Path findMainJavaPath() {
+        Path moduleRelative = Path.of("src", "main", "java");
+        if (Files.exists(moduleRelative)) return moduleRelative;
+        return Path.of("app", "src", "main", "java");
+    }
+
+    private static Path findLeanbackJavaPath() {
+        Path moduleRelative = Path.of("src", "leanback", "java");
+        if (Files.exists(moduleRelative)) return moduleRelative;
+        return Path.of("app", "src", "leanback", "java");
     }
 
     private static Set<String> collectAndroidIds(File file) throws Exception {
